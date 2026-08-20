@@ -185,11 +185,11 @@ async function initSupabase(){
 <div class="actions"><button onclick="openScanner()">📷 Barkod/ISBN Tara</button><button class="secondary" onclick="document.getElementById('photo').click()">📸 Kitap Fotoğrafı Yükle</button><input id="photo" type="file" accept="image/*" capture="environment" style="display:none" onchange="photoAssist(event)"></div>
 <div id="addNotice"></div>
 <div class="formgrid">
-<div><label>ISBN<input id="isbn"></label></div><div><label>Kitap adı<input id="title"></label></div><div><label>Yazar<input id="author"></label></div><div><label>Yayıncı<input id="publisher"></label></div><div><label>Basım yılı<input id="year" type="number"></label></div><div><label>Sayfa sayısı<input id="pages" type="number"></label></div><div><label>Tür<input id="genre"></label></div><div><label>Kapak URL (opsiyonel)<input id="cover"></label></div>
+<div><label>ISBN<input id="isbn"></label></div><div><label>Kitap adı<input id="title"></label></div><div><label>Yazar<input id="author"></label></div><div><label>Yayıncı<input id="publisher"></label></div><div><label>Basım yılı<input id="year" type="number"></label></div><div><label>Sayfa sayısı<input id="pages" type="number"></label></div><div><label>Tür<input id="genre"></label></div><div><label>Kapak URL (opsiyonel)<input id="cover"></label><div id="manualCoverUploadBox" style="margin-top:8px;padding:10px;border:1px dashed #cdbda9;border-radius:10px;background:#fbf8f3"><div style="font-weight:700;margin-bottom:7px">🖼️ Kapak fotoğrafı</div><input id="newCoverPhoto" type="file" accept="image/jpeg,image/png,image/webp" onchange="previewNewCoverPhoto(this)"><div id="newCoverPreview" style="display:none;margin-top:8px"></div><button type="button" class="secondary" id="saveUploadedCoverBtn" style="display:none;margin-top:8px" onclick="saveUploadedCoverAsCover()">💾 Bu görseli kapak olarak kaydet</button></div></label></div>
 <div><label>Raf<select id="shelf"></select></label></div><div><label>Sıra<select id="row"></select></label></div><div><label>Konum<input id="pos" type="number" min="1" placeholder="Örn. 7"></label></div><div><label>Okuma durumu<select id="status"><option value="unread">Okunmadı</option><option value="read">Okundu</option></select><button type="button" onclick="saveReadingStatus()" style="margin-top:8px">💾 Okundu Durumunu Kaydet</button></label></div>
 </div>
 <label>Not<textarea id="notes" rows="3"></textarea></label>
-<div class="actions"><button onclick="saveBook()">Kütüphaneye Ekle</button><button class="secondary" onclick="clearForm()">Temizle</button></div>
+<div style="margin-top:14px;padding:12px;border:1px solid #ddd1c2;border-radius:10px;background:#faf7f2"><label style="font-weight:700">📕 Kitap kapağı ekleme <select id="addCoverChoice" style="margin-left:8px"><option value="ask">Kaydetmeden önce sor</option><option value="yes">Kapağı ekle</option><option value="no">Kapak ekleme</option></select></label><div class="muted" style="margin-top:5px">Yüklediğin görseli kitap kaydına kapak olarak ekleyip eklemeyeceğini buradan seçebilirsin.</div></div><div class="actions"><button onclick="saveBook()">Kütüphaneye Ekle</button><button class="secondary" onclick="clearForm()">Temizle</button></div>
 </div>
 <div class="card" style="margin-top:16px">
 <h2>📸 Fotoğraftan Kitap Tanıma</h2>
@@ -222,10 +222,48 @@ if(localStorage.getItem(IMPORT_VERSION_KEY)!==IMPORT_VERSION){
 
 
 let data=JSON.parse(localStorage.getItem(KEY)||'null')||{books:[],wishlist:[],shelves:[{name:'A',rows:5},{name:'B',rows:5},{name:'C',rows:5}]};
+// TEKİL KİTAP TEMİZLİĞİ:
+// ISBN varsa ISBN ile, ISBN yoksa kitap adı + yazar ile aynı kitapları teke düşür.
+// Kapaklardan biri doluysa dolu olan kapağı koru; raf/konum bilgisi de mümkün olduğunca korunur.
+function dedupeBooks(){
+  if(!window.data || !Array.isArray(data.books)) return 0;
+  const seen=new Map(), unique=[];
+  const norm=s=>String(s??'').normalize('NFKC').trim().toLocaleLowerCase('tr-TR').replace(/\s+/g,' ');
+  for(const b of data.books){
+    const isbn=norm(b.isbn);
+    const title=norm(b.title);
+    const author=norm(b.author);
+    const key=isbn ? 'isbn:'+isbn : 'title:'+title+'|author:'+author;
+    if(!title && !isbn){ unique.push(b); continue; }
+    const prev=seen.get(key);
+    if(!prev){
+      seen.set(key,b);
+      unique.push(b);
+    }else{
+      // Kapak varsa koru
+      if(!prev.cover && b.cover) prev.cover=b.cover;
+      // Eksik temel bilgileri doldur
+      for(const k of ['isbn','author','publisher','year','pages','genre','notes']){
+        if((prev[k]==null || prev[k]==='') && b[k]!=null && b[k]!=='') prev[k]=b[k];
+      }
+      // İlk kaydın rafı boşsa ikinci kaydın rafını kullan
+      if((prev.shelf==null || prev.shelf==='') && b.shelf) prev.shelf=b.shelf;
+      if((prev.pos==null || prev.pos==='') && b.pos!=null && b.pos!=='') prev.pos=b.pos;
+    }
+  }
+  const removed=data.books.length-unique.length;
+  if(removed){
+    data.books=unique;
+    localStorage.setItem(KEY,JSON.stringify(data));
+  }
+  return removed;
+}
+dedupeBooks();
+
 function save(){localStorage.setItem(KEY,JSON.stringify(data));renderAll()}
 function esc(s=''){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function showPage(id){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.getElementById(id).classList.add('active');renderAll()}
-function renderAll(){document.getElementById('statBooks').textContent=data.books.length;document.getElementById('statShelves').textContent=data.shelves.length;document.getElementById('statUnread').textContent=data.books.filter(b=>b.status!=='read').length;document.getElementById('statWish').textContent=data.wishlist.length;fillShelfSelect();renderBooks();renderShelves();renderWishlist();renderSearch(document.getElementById('globalSearch')?.value||'')}
+function renderAll(){dedupeBooks();document.getElementById('statBooks').textContent=data.books.length;document.getElementById('statShelves').textContent=data.shelves.length;document.getElementById('statUnread').textContent=data.books.filter(b=>b.status!=='read').length;document.getElementById('statWish').textContent=data.wishlist.length;fillShelfSelect();renderBooks();renderShelves();renderWishlist();renderSearch(document.getElementById('globalSearch')?.value||'')}
   const readCount=data.books.filter(b=>b.status==='read').length;
   const statRead=document.getElementById('statRead'); if(statRead)statRead.textContent=readCount;
 function fillShelfSelect(){let s=document.getElementById('shelf'), old=s.value; s.innerHTML=data.shelves.map(x=>`<option>${esc(x.name)}</option>`).join('');if(old)s.value=old;fillRows()}
@@ -233,7 +271,7 @@ function fillRows(){let sh=data.shelves.find(x=>x.name===document.getElementById
 document.getElementById('shelf').addEventListener('change',fillRows);
 function normalizeSearch(s=''){return String(s).toLocaleLowerCase('tr-TR').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').replace(/ı/g,'i').trim()}
 function renderBooks(){let q=normalizeSearch(document.getElementById('bookSearch')?.value||''), f=document.getElementById('readFilter')?.value||'';let a=data.books.filter(b=>{let text=normalizeSearch([b.title,b.author,b.isbn,b.publisher,b.genre].join(' '));return (!q||text.includes(q))&&(!f||b.status===f)});document.getElementById('booksList').innerHTML=a.length?a.map(bookCard).join(''):'<div class="notice">Aramaya uygun kitap bulunamadı.</div>'}
-function bookCard(b){let sh=b.shelf||'—', loc=`${sh} rafı / ${b.row||'—'}. sıra / ${b.pos||'—'}. kitap`;return `<div class="book"><div class="cover">${b.cover?`<img src="${esc(b.cover)}" style="width:100%;height:100%;object-fit:cover;border-radius:7px">`:'📕'}</div><div><h3>${esc(b.title)}</h3><div>${esc(b.author||'Yazar bilinmiyor')}</div><span class="pill">📍 ${esc(loc)}</span>${b.isbn?`<span class="pill">ISBN ${esc(b.isbn)}</span>`:''}<span class="pill">${b.status==='read'?'✅ Okundu':'📖 Okunmadı'}</span></div><div class="right"><button onclick="editBook('${b.id}')">Düzenle</button><button class="secondary" onclick="toggleWish('${b.id}')">⭐</button><button class="danger" onclick="deleteBook('${b.id}')">Sil</button></div></div>`}
+function bookCard(b){let sh=b.shelf||'—', loc=`${sh} rafı / ${b.row||'—'}. sıra / ${b.pos||'—'}. kitap`;return `<div class="book"><div class="cover">${b.cover?`<img src="${esc(b.cover)}" style="width:100%;height:100%;object-fit:cover;border-radius:7px">`:'📕'}</div><div><h3>${esc(b.title)}</h3><div>${esc(b.author||'Yazar bilinmiyor')}</div><span class="pill">📍 ${esc(loc)}</span>${b.isbn?`<span class="pill">ISBN ${esc(b.isbn)}</span>`:''}<span class="pill">${b.status==='read'?'✅ Okundu':'📖 Okunmadı'}</span></div><div class="right"><button onclick="editBook('${b.id}')">Düzenle</button><button class="secondary" onclick="editBook('${b.id}')">📕 ${b.cover?'Kapağı Değiştir':'Kapak Ekle'}</button><button class="secondary" onclick="toggleWish('${b.id}')">⭐</button><button class="danger" onclick="deleteBook('${b.id}')">Sil</button></div></div>`}
 function renderSearch(q){let el=document.getElementById('searchResult');if(!el)return;if(!q){el.innerHTML='<div class="muted">Arama yaptığında kitabın sende olup olmadığını ve fiziksel yerini burada göreceksin.</div>';return}let a=data.books.filter(b=>[b.title,b.author,b.isbn].join(' ').toLowerCase().includes(q.toLowerCase()));el.innerHTML=a.length?a.map(b=>`<div class="notice ok"><b>🟢 SAHİPSİN:</b> ${esc(b.title)} — ${esc(b.author)}<br>📍 ${esc(b.shelf)} rafı / ${esc(b.row)}. sıra / ${esc(b.pos)}. kitap</div>`).join(''):`<div class="notice bad"><b>🔴 KÜTÜPHANEDE YOK</b><br><button onclick="addWishPrompt('${esc(q)}')">İstek listesine ekle</button></div>`}
 function normalizeTR(s=''){
   return String(s).toLocaleLowerCase('tr-TR').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/ı/g,'i');
@@ -448,7 +486,23 @@ function nextAvailableShelfPosition(){
   return null;
 }
 function saveBook(){
-  const b={id:crypto.randomUUID(),isbn:v('isbn'),title:v('title'),author:v('author'),publisher:v('publisher'),year:v('year'),pages:v('pages'),genre:v('genre'),cover:v('cover'),shelf:v('shelf'),row:v('row'),pos:v('pos'),status:v('status')||'unread',notes:v('notes')};
+  let cover=v('cover');
+  const choice=document.getElementById('addCoverChoice')?.value||'ask';
+  if(choice==='ask'){
+    const wants=confirm('Bu kitaba kapak eklemek istiyor musun?\n\nTamam = Kapak ekle / seç\nİptal = Kapaksız kaydet');
+    if(wants && !cover){
+      const f=document.getElementById('newCoverPhoto');
+      if(f){ alert('Kapak eklemek için şimdi görseli seç. Görsel seçtikten sonra “Kütüphaneye Ekle” butonuna tekrar bas.'); f.click(); }
+      return;
+    }
+    if(!wants) cover='';
+  } else if(choice==='no') cover='';
+  else if(choice==='yes' && !cover){
+    const f=document.getElementById('newCoverPhoto');
+    if(f){ alert('“Kapağı ekle” seçildi. Lütfen önce bir kapak görseli seç.'); f.click(); }
+    return;
+  }
+  const b={id:crypto.randomUUID(),isbn:v('isbn'),title:v('title'),author:v('author'),publisher:v('publisher'),year:v('year'),pages:v('pages'),genre:v('genre'),cover:cover,shelf:v('shelf'),row:v('row'),pos:v('pos'),status:v('status')||'unread',notes:v('notes')};
   if(!b.title){alert('Kitap adı gerekli.');return}
   const dup=data.books.find(x=>(b.isbn&&x.isbn===b.isbn)||(!b.isbn&&normalizeTR(x.title+'|'+(x.author||''))===normalizeTR(b.title+'|'+(b.author||''))));
   if(dup){alert('Bu kitap zaten kütüphanede.');return}
@@ -459,7 +513,24 @@ function saveBook(){
   data.books.push(b); save(); clearForm(); renderShelves(); showPage('shelves');
 }
 function v(id){return document.getElementById(id)?.value?.trim()||''}
-function clearForm(){['isbn','title','author','publisher','year','pages','genre','cover','pos','notes'].forEach(id=>document.getElementById(id).value='');}
+function previewNewCoverPhoto(input){
+  const file=input?.files?.[0]; if(!file)return;
+  if(file.size>5*1024*1024){alert('Kapak görseli 5 MB veya daha küçük olmalı.');input.value='';return;}
+  const r=new FileReader();
+  r.onload=()=>{
+    window.pendingNewCoverImage=r.result;
+    const box=document.getElementById('newCoverPreview'),btn=document.getElementById('saveUploadedCoverBtn');
+    if(box){box.style.display='block';box.innerHTML=`<div style="display:flex;gap:10px;align-items:center"><img src="${esc(r.result)}" style="width:70px;height:100px;object-fit:cover;border-radius:6px;border:1px solid #ddd"><span class="muted">Görsel yüklendi. İstersen bunu kitap kapağı olarak kaydedebilirsin.</span></div>`;}
+    if(btn)btn.style.display='inline-block';
+  }; r.readAsDataURL(file);
+}
+function saveUploadedCoverAsCover(){
+  if(!window.pendingNewCoverImage){alert('Önce bir kapak görseli seç.');return;}
+  const cover=document.getElementById('cover'); if(cover)cover.value=window.pendingNewCoverImage;
+  const choice=document.getElementById('addCoverChoice'); if(choice)choice.value='yes';
+  const btn=document.getElementById('saveUploadedCoverBtn'); if(btn)btn.textContent='✅ Kapak kaydedilecek';
+}
+function clearForm(){['isbn','title','author','publisher','year','pages','genre','cover','pos','notes'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';}); const f=document.getElementById('newCoverPhoto');if(f)f.value='';window.pendingNewCoverImage='';const p=document.getElementById('newCoverPreview');if(p)p.style.display='none';const b=document.getElementById('saveUploadedCoverBtn');if(b){b.style.display='none';b.textContent='💾 Bu görseli kapak olarak kaydet';}const c=document.getElementById('addCoverChoice');if(c)c.value='ask';}
 function deleteBook(id){if(confirm('Kitap silinsin mi?')){data.books=data.books.filter(b=>b.id!==id);save()}}
 
 function renderBookCoverManager(b){
@@ -478,24 +549,59 @@ function renderBookCoverManager(b){
     </div>
     <div>
       <b>${b.cover?'📕 Mevcut kapağı değiştir':'📕 Bu kitaba kapak ekle'}</b>
-      <p class="muted">Bilgisayarından JPG, PNG veya WebP seçebilirsin.</p>
+      <p class="muted">Telefonundan veya bilgisayarından JPG, PNG ya da WebP seçebilirsin.</p>
       <input id="manualCoverFile" type="file" accept="image/jpeg,image/png,image/webp" onchange="setManualBookCover('${String(b.id).replace(/'/g,"\\'")}',this)">
       ${b.cover?'<button class="secondary" onclick="removeBookCover(\''+String(b.id).replace(/'/g,"\\'")+'\')">Kapağı Kaldır</button>':''}
     </div>
   </div>`;
 }
-function setManualBookCover(id,input){
+async function setManualBookCover(id,input){
   const file=input.files?.[0]; if(!file)return;
-  if(file.size>4*1024*1024){alert('Kapak görseli 4 MB veya daha küçük olmalı.');input.value='';return}
-  const reader=new FileReader();
-  reader.onload=()=>{
-    const b=data.books.find(x=>x.id===id); if(!b)return;
-    b.cover=reader.result; rememberCover(b); save();
+  if(file.size>12*1024*1024){alert('Kapak görseli 12 MB veya daha küçük olmalı.');input.value='';return}
+  const b=data.books.find(x=>String(x.id)===String(id)); if(!b)return;
+  const status=document.getElementById('bookCoverManager');
+  if(status){const old=document.getElementById('coverUploadStatus');if(old)old.remove();status.insertAdjacentHTML('beforeend','<div id="coverUploadStatus" class="notice">☁️ Kapak hazırlanıyor ve kaydediliyor…</div>');}
+  try{
+    const src=await compressCoverFile(file);
+    b.cover=src;
+    rememberCover(b);
+    save();
     renderShelves();
+    if(window.syncBookToSupabase){
+      const ok=await window.syncBookToSupabase(b);
+      if(!ok) throw new Error('Bulut kaydı başarısız.');
+    }
+    const msg=document.getElementById('coverUploadStatus');
+    if(msg) msg.textContent='✅ Kapak kaydedildi. Telefon, bilgisayar ve diğer tarayıcılarda kullanılabilir.';
     renderBookCoverManager(b);
-  };
-  reader.readAsDataURL(file);
+  }catch(e){
+    console.error(e);
+    const msg=document.getElementById('coverUploadStatus');
+    if(msg) msg.textContent='❌ Kapak kaydedilemedi: '+(e.message||e);
+    else alert('Kapak kaydedilemedi: '+(e.message||e));
+  }finally{input.value='';}
 }
+function compressCoverFile(file){
+  return new Promise((resolve,reject)=>{
+    const r=new FileReader();
+    r.onerror=()=>reject(new Error('Görsel okunamadı.'));
+    r.onload=()=>{
+      const img=new Image();
+      img.onload=()=>{
+        const maxW=1000,maxH=1500;
+        const scale=Math.min(1,maxW/img.naturalWidth,maxH/img.naturalHeight);
+        const w=Math.max(1,Math.round(img.naturalWidth*scale)),h=Math.max(1,Math.round(img.naturalHeight*scale));
+        const c=document.createElement('canvas');c.width=w;c.height=h;
+        const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);ctx.drawImage(img,0,0,w,h);
+        resolve(c.toDataURL('image/jpeg',.82));
+      };
+      img.onerror=()=>reject(new Error('Görsel açılamadı.'));
+      img.src=r.result;
+    };
+    r.readAsDataURL(file);
+  });
+}
+
 function removeBookCover(id){
   const b=data.books.find(x=>x.id===id); if(!b)return;
   b.cover='';
@@ -1357,6 +1463,13 @@ async function authBoot(){
       window.currentUserId=currentSupabaseUser?.id||null;
       document.getElementById("authGate").style.display=
         currentSupabaseUser?"none":"flex";
+      if(currentSupabaseUser){
+        setTimeout(async()=>{
+          try{ if(window.syncLibraryToSupabase) await window.syncLibraryToSupabase(); }catch(e){}
+          try{ if(window.syncCoversViaEdgeFunction) await window.syncCoversViaEdgeFunction(); }catch(e){}
+          try{ if(window.cloudBoot) await window.cloudBoot(); }catch(e){}
+        },700);
+      }
     });
   }catch(e){
     console.error("Auth:",e);
@@ -1953,19 +2066,38 @@ document.addEventListener("DOMContentLoaded",()=>{const b=document.getElementByI
 
   async function uploadCover(book, sb, uid){
     const src=book?.cover||book?.coverUrl||book?.image||book?.imageUrl;
-    if(!src || String(src).includes('.supabase.co/storage/v1/object/')) return src||null;
+    if(!src) return null;
+    if(String(src).includes('.supabase.co/storage/v1/object/')) return src;
+    // Önce mevcut Edge Function ile kalıcı depolamaya aktar.
     try{
-      const {data,error}=await sb.functions.invoke('book-cover-sync',{body:{
+      const {data,error}=await sb.functions.invoke('cover-url-to-storage-v2',{body:{
         bookId:window.cloudUUID?window.cloudUUID(book.id,"book"):String(book.id),
         coverUrl:String(src)
       }});
-      if(error) throw error;
-      const r=(data?.results||[])[0];
-      return r?.url||src;
-    }catch(e){
-      console.warn('Kapak Edge Function aktarımı:',e);
-      return src;
+      if(!error){
+        const r=(data?.results||[])[0];
+        if(r?.url) return r.url;
+      }
+    }catch(e){ console.warn('Kapak Edge aktarımı:',e); }
+    // Edge Function başarısızsa data:image kapaklarını doğrudan Storage'a yüklemeyi dene.
+    if(/^data:image\//i.test(String(src))){
+      try{
+        const m=String(src).match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
+        if(m){
+          const mime=m[1].toLowerCase();
+          const ext=mime.includes('png')?'png':mime.includes('webp')?'webp':'jpg';
+          const bytes=Uint8Array.from(atob(m[2]),c=>c.charCodeAt(0));
+          const path=`${uid}/${window.cloudUUID?window.cloudUUID(book.id,"book"):String(book.id)}.${ext}`;
+          const {error}=await sb.storage.from('book-covers').upload(path,new Blob([bytes],{type:mime}),{upsert:true,contentType:mime});
+          if(!error){
+            const {data}=sb.storage.from('book-covers').getPublicUrl(path);
+            if(data?.publicUrl) return data.publicUrl;
+          } else console.warn('Storage kapak yükleme:',error);
+        }
+      }catch(e){ console.warn('Doğrudan kapak yükleme:',e); }
     }
+    // Hiçbiri mümkün değilse yerel görseli koru; cloudBoot daha sonra tekrar dener.
+    return src;
   }
 
   async function syncOneBookToSupabase(book){
@@ -2044,7 +2176,7 @@ document.addEventListener("DOMContentLoaded",()=>{const b=document.getElementByI
     let uploaded=0,already=0,failed=0;
     for(let i=0;i<items.length;i+=25){
       try{
-        const {data:res,error}=await sb.functions.invoke('book-cover-sync',{body:{items:items.slice(i,i+25)}});
+        const {data:res,error}=await sb.functions.invoke('cover-url-to-storage-v2',{body:{items:items.slice(i,i+25)}});
         if(error) throw error;
         for(const r of (res?.results||[])){
           if(r.status==='uploaded'){uploaded++; const b=books.find(x=>String(window.cloudUUID?window.cloudUUID(x.id,"book"):x.id)===String(r.bookId)); if(b&&r.url)b.cover=r.url;}
@@ -2075,41 +2207,27 @@ document.addEventListener("DOMContentLoaded",()=>{const b=document.getElementByI
         if(!data||data.length<1000)break;
       }
       if(!rows.length)return;
-
       const local=getBooksFromLocalStorage();
-      const byKey=new Map();
-      const normKey=(title,author,isbn)=>{
-        const i=String(isbn||"").replace(/[^0-9Xx]/g,"").toLowerCase();
-        if(i) return "isbn:"+i;
-        return "ta:"+String(title||"").trim().toLocaleLowerCase("tr-TR")+"||"+String(author||"").trim().toLocaleLowerCase("tr-TR");
-      };
-      for(const b of local) byKey.set(normKey(b.title,b.author,b.isbn),b);
+      const norm=v=>String(v??'').normalize('NFKC').trim().toLocaleLowerCase('tr-TR').replace(/\s+/g,' ');
+      const byKey=new Map(); const byIsbn=new Map();
+      local.forEach(b=>{byKey.set(norm((b.title||'')+'||'+(b.author||'')),b); if(b.isbn)byIsbn.set(norm(b.isbn),b);});
       let changed=false;
       for(const r of rows){
-        const key=normKey(r.title,r.author,r.isbn);
-        let b=byKey.get(key);
-        if(!b){
-          // Telefonda/baska cihazda eklenen ama bu cihazda olmayan kitabı buluttan indir.
-          b={id:String(r.id),isbn:r.isbn||"",title:r.title||"Kitap",author:r.author||"",publisher:r.publisher||"",year:r.year||"",pages:r.pages||"",genre:r.genre||"",cover:r.cover||"",shelf:r.shelf||((data.shelves&&data.shelves[0])?data.shelves[0].name:""),row:r.row_number||1,pos:r.position||1,status:r.status||"unread",notes:r.notes||""};
-          local.push(b); byKey.set(key,b); changed=true;
-        } else {
-          // Buluttaki kapak ve eksik temel alanları yerel kayda geri taşı.
-          if(r.cover && b.cover!==r.cover){ b.cover=r.cover; changed=true; }
-        }
+        const b=(r.isbn&&byIsbn.get(norm(r.isbn)))||byKey.get(norm((r.title||'')+'||'+(r.author||'')));
+        if(!b) continue;
+        if(r.cover && b.cover!==r.cover){ b.cover=r.cover; changed=true; }
       }
       if(changed){
         const raw=localStorage.getItem("my-library-v1");
-        let state; try{state=raw?JSON.parse(raw):local}catch(e){state=local}
+        let state; try{state=raw?JSON.parse(raw):{books:local};}catch(e){state={books:local};}
         if(Array.isArray(state)) localStorage.setItem("my-library-v1",JSON.stringify(local));
-        else if(state&&Array.isArray(state.books)){state.books=local;localStorage.setItem("my-library-v1",JSON.stringify(state));}
-        window.data.books=local;
-        if(typeof renderShelves==='function') renderShelves();
+        else {state.books=local; localStorage.setItem("my-library-v1",JSON.stringify(state));}
+        if(typeof renderAll==='function') renderAll();
       }
-      // Bu cihazdaki yeni kitapları da hemen buluta gönder; böylece telefon ve bilgisayar iki yönlü çalışır.
-      setTimeout(()=>{ if(typeof window.syncLibraryToSupabase==='function') window.syncLibraryToSupabase(); },150);
     }catch(e){console.warn("Bulut başlangıç senkronu:",e)}
   }
 
+  window.cloudBoot=cloudBoot;
   document.addEventListener("DOMContentLoaded",()=>setTimeout(cloudBoot,900));
 })();
 </script>
