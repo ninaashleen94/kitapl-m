@@ -2076,21 +2076,69 @@ document.addEventListener("DOMContentLoaded",()=>{const b=document.getElementByI
       }
       if(!rows.length)return;
 
+      // GitHub Pages has its own localStorage origin. Therefore the local
+      // 608-book cache must NEVER be treated as the complete library.
+      // Supabase is the cloud source of truth: merge all cloud books into
+      // the local cache, preserving any local-only books and local fields.
       const local=getBooksFromLocalStorage();
-      const byTitle=new Map(local.map(b=>[(String(b.title||"")+"||"+String(b.author||"")).toLocaleLowerCase("tr-TR"),b]));
+      const keyOf=b=>{
+        const isbn=String(b?.isbn||b?.ISBN||"").replace(/[^0-9Xx]/g,"").toLowerCase();
+        if(isbn)return "isbn:"+isbn;
+        return "title:"+String(b?.title||b?.name||"").trim().toLocaleLowerCase("tr-TR")
+          +"||"+String(b?.author||b?.authors||"").trim().toLocaleLowerCase("tr-TR");
+      };
+      const byKey=new Map(local.map(b=>[keyOf(b),b]));
       let changed=false;
+
       for(const r of rows){
-        const b=byTitle.get((String(r.title||"")+"||"+String(r.author||"")).toLocaleLowerCase("tr-TR"));
-        if(b && r.cover && b.cover!==r.cover){
-          b.cover=r.cover; changed=true;
+        const k=keyOf(r);
+        let b=byKey.get(k);
+
+        if(!b){
+          // Reconstruct a local book from the cloud record. Do not alter or
+          // delete anything already present locally.
+          b={
+            id:r.id,
+            title:r.title||"Kitap",
+            author:r.author||"",
+            isbn:r.isbn||"",
+            publisher:r.publisher||"",
+            year:r.year||"",
+            pages:r.pages??"",
+            genre:r.genre||"",
+            cover:r.cover||"",
+            shelf:r.shelf||"",
+            row:r.row_number??"",
+            pos:r.position??"",
+            status:r.status||"unread",
+            notes:r.notes||""
+          };
+          local.push(b);
+          byKey.set(k,b);
+          changed=true;
+        }else{
+          // Cloud covers are permanent; use them locally. For the rest,
+          // prefer existing local data so an older GitHub cache is not
+          // unexpectedly overwritten.
+          if(r.cover && b.cover!==r.cover){b.cover=r.cover;changed=true;}
+          if(!b.id && r.id){b.id=r.id;changed=true;}
         }
       }
+
       if(changed){
         const raw=localStorage.getItem("my-library-v1");
-        let state; try{state=raw?JSON.parse(raw):local}catch(e){state=local}
-        if(Array.isArray(state))localStorage.setItem("my-library-v1",JSON.stringify(local));
-        else if(state&&Array.isArray(state.books)){state.books=local;localStorage.setItem("my-library-v1",JSON.stringify(state));}
+        let state; try{state=raw?JSON.parse(raw):{books:local}}catch(e){state={books:local}}
+        if(Array.isArray(state)) localStorage.setItem("my-library-v1",JSON.stringify(local));
+        else if(state&&Array.isArray(state.books)){
+          state.books=local;
+          localStorage.setItem("my-library-v1",JSON.stringify(state));
+        }
+        if(window.data){
+          window.data.books=local;
+          if(typeof renderAll==="function")renderAll();
+        }
       }
+      console.log("☁️ Bulut kitaplık eşitlendi:",rows.length,"Supabase /",local.length,"yerel");
     }catch(e){console.warn("Bulut başlangıç senkronu:",e)}
   }
 
