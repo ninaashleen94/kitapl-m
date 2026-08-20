@@ -2620,5 +2620,48 @@ document.addEventListener("DOMContentLoaded",()=>{const b=document.getElementByI
   },500);
 })();
 </script>
+
+<script>
+(function(){
+  function norm(s){return String(s||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/ı/g,"i").replace(/ğ/g,"g").replace(/ü/g,"u").replace(/ş/g,"s").replace(/ö/g,"o").replace(/ç/g,"c").replace(/\s+/g," ").trim();}
+  function key(b){
+    const isbn=String(b?.isbn||b?.ISBN||"").replace(/[^0-9Xx]/g,"");
+    if(isbn)return "isbn:"+isbn;
+    return "t:"+norm(b?.title||b?.name)+"|a:"+norm(b?.author||b?.authors);
+  }
+  function run(){
+    try{
+      const raw=localStorage.getItem("my-library-v1"); if(!raw)return;
+      let state=JSON.parse(raw), arr=Array.isArray(state)?state:(state?.books||[]);
+      if(!Array.isArray(arr))return;
+      const map=new Map(), out=[];
+      for(const b of arr){
+        const k=key(b);
+        if(!k || k==="t:|a:"){out.push(b);continue;}
+        const old=map.get(k);
+        if(!old){map.set(k,b);out.push(b);continue;}
+        // Merge duplicate copies into the first record; preserve the richer cover/data.
+        const merged={...old};
+        for(const [field,val] of Object.entries(b||{})){
+          if((merged[field]==null||merged[field]==="") && val!=null&&val!=="") merged[field]=val;
+        }
+        if(b.cover && String(b.cover).includes("/storage/v1/object/")) merged.cover=b.cover;
+        const idx=out.indexOf(old); if(idx>=0) out[idx]=merged;
+        map.set(k,merged);
+      }
+      if(out.length!==arr.length){
+        if(Array.isArray(state)) localStorage.setItem("my-library-v1",JSON.stringify(out));
+        else {state.books=out; localStorage.setItem("my-library-v1",JSON.stringify(state));}
+        try{
+          if(window.data?.books) window.data.books=out;
+          if(typeof window.renderAll==="function")window.renderAll();
+          else if(typeof window.renderBooks==="function")window.renderBooks();
+        }catch(e){}
+      }
+    }catch(e){console.warn("Kitap tekrar temizleme:",e)}
+  }
+  setTimeout(run,1800);
+})();
+</script>
 </body>
 </html>
