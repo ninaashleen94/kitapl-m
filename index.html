@@ -2077,20 +2077,36 @@ document.addEventListener("DOMContentLoaded",()=>{const b=document.getElementByI
       if(!rows.length)return;
 
       const local=getBooksFromLocalStorage();
-      const byTitle=new Map(local.map(b=>[(String(b.title||"")+"||"+String(b.author||"")).toLocaleLowerCase("tr-TR"),b]));
+      const byKey=new Map();
+      const normKey=(title,author,isbn)=>{
+        const i=String(isbn||"").replace(/[^0-9Xx]/g,"").toLowerCase();
+        if(i) return "isbn:"+i;
+        return "ta:"+String(title||"").trim().toLocaleLowerCase("tr-TR")+"||"+String(author||"").trim().toLocaleLowerCase("tr-TR");
+      };
+      for(const b of local) byKey.set(normKey(b.title,b.author,b.isbn),b);
       let changed=false;
       for(const r of rows){
-        const b=byTitle.get((String(r.title||"")+"||"+String(r.author||"")).toLocaleLowerCase("tr-TR"));
-        if(b && r.cover && b.cover!==r.cover){
-          b.cover=r.cover; changed=true;
+        const key=normKey(r.title,r.author,r.isbn);
+        let b=byKey.get(key);
+        if(!b){
+          // Telefonda/baska cihazda eklenen ama bu cihazda olmayan kitabı buluttan indir.
+          b={id:String(r.id),isbn:r.isbn||"",title:r.title||"Kitap",author:r.author||"",publisher:r.publisher||"",year:r.year||"",pages:r.pages||"",genre:r.genre||"",cover:r.cover||"",shelf:r.shelf||((data.shelves&&data.shelves[0])?data.shelves[0].name:""),row:r.row_number||1,pos:r.position||1,status:r.status||"unread",notes:r.notes||""};
+          local.push(b); byKey.set(key,b); changed=true;
+        } else {
+          // Buluttaki kapak ve eksik temel alanları yerel kayda geri taşı.
+          if(r.cover && b.cover!==r.cover){ b.cover=r.cover; changed=true; }
         }
       }
       if(changed){
         const raw=localStorage.getItem("my-library-v1");
         let state; try{state=raw?JSON.parse(raw):local}catch(e){state=local}
-        if(Array.isArray(state))localStorage.setItem("my-library-v1",JSON.stringify(local));
+        if(Array.isArray(state)) localStorage.setItem("my-library-v1",JSON.stringify(local));
         else if(state&&Array.isArray(state.books)){state.books=local;localStorage.setItem("my-library-v1",JSON.stringify(state));}
+        window.data.books=local;
+        if(typeof renderShelves==='function') renderShelves();
       }
+      // Bu cihazdaki yeni kitapları da hemen buluta gönder; böylece telefon ve bilgisayar iki yönlü çalışır.
+      setTimeout(()=>{ if(typeof window.syncLibraryToSupabase==='function') window.syncLibraryToSupabase(); },150);
     }catch(e){console.warn("Bulut başlangıç senkronu:",e)}
   }
 
