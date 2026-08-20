@@ -1,3 +1,4 @@
+
 <!doctype html>
 <html lang="tr">
 <head>
@@ -46,18 +47,62 @@ hr{border:0;border-top:1px solid #e4ddd4;margin:18px 0}
 
 .shelfSearchHit{outline:4px solid #ffb300!important;outline-offset:3px;box-shadow:0 0 0 8px rgba(255,179,0,.18),0 10px 25px rgba(0,0,0,.25)!important;transform:translateY(-3px)!important}
 </style>
-</head>
+
+<!-- Supabase Auth -->
+<script>
+const SUPABASE_URL = "https://eylbiuworndkyfmltlic.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_j_H9znWmyc6IuyUggOErUg_RtYMQ0ST";
+let supabaseClient = null;
+let currentSupabaseUser = null;
+
+async function initSupabase(){
+  if(!supabaseClient){
+    if(!window.supabase){
+      await new Promise((resolve,reject)=>{
+        const s=document.createElement("script");
+        s.src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
+        s.onload=resolve;
+        s.onerror=reject;
+        document.head.appendChild(s);
+      });
+    }
+    supabaseClient=window.supabase.createClient(
+      SUPABASE_URL,
+      SUPABASE_PUBLISHABLE_KEY
+    );
+  }
+  return supabaseClient;
+}
+</script>
+<style>
+#storageCoverPanel,#missingCoverPanel,#directCoverPanel{display:none!important;visibility:hidden!important;pointer-events:none!important}
+</style></head>
 <body>
+
+
+
+
+<div id="authGate" style="display:none;position:fixed;inset:0;z-index:999999;background:#f4f1eb;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">
+  <div style="width:min(420px,100%);background:#fff;border-radius:18px;padding:28px;box-shadow:0 18px 55px rgba(0,0,0,.16);box-sizing:border-box">
+    <h1 style="margin:0 0 8px">🔐 Kitaplık Girişi</h1>
+    <p style="margin:0 0 18px;color:#666">Kitaplığını açmak için giriş yap.</p>
+    <input id="authEmail" type="email" autocomplete="username" placeholder="E-posta" style="width:100%;box-sizing:border-box;margin:6px 0;padding:12px;border:1px solid #ddd;border-radius:10px">
+    <input id="authPassword" type="password" autocomplete="current-password" placeholder="Şifre" style="width:100%;box-sizing:border-box;margin:6px 0;padding:12px;border:1px solid #ddd;border-radius:10px">
+    <button type="button" onclick="authSignIn()" style="width:100%;margin-top:10px;padding:12px;border:0;border-radius:10px;cursor:pointer">Giriş Yap</button>
+    <button type="button" onclick="authReset()" style="width:100%;margin-top:8px;padding:12px;border:1px solid #ddd;background:#fff;border-radius:10px;cursor:pointer">Şifremi Unuttum</button>
+    <div id="authMsg" style="display:none;margin-top:12px;padding:10px;border-radius:10px;font-size:14px"></div>
+  </div>
+</div>
+
 <header>
 <div class="header"><div><div class="brand">📚 Benim Kütüphanem</div><div class="sub">Fiziksel raflarının dijital ikizi</div></div></div>
 <nav>
-<button onclick="showPage('home')">Ana Sayfa</button><button onclick="showPage('books')">Kitaplar</button><button onclick="showPage('readBooks');renderReadBooks()">Okundu</button><button onclick="showPage('shelves')">Raflar</button><button onclick="showPage('shelfEdit')">Raf İsimlerini Düzenle</button><button onclick="showPage('add')">Kitap Ekle</button><button onclick="showPage('wishlist')">İstek Listesi</button><button onclick="showPage('backup')">Yedek</button>
+<button onclick="showPage('home')">Ana Sayfa</button><button onclick="showPage('books')">Kitaplar</button><button onclick="showPage('readBooks');renderReadBooks()">Okundu</button><button onclick="showPage('shelves')">Raflar</button><button onclick="showPage('shelfEdit')">Raf İsimlerini Düzenle</button><button onclick="showPage('add')">Kitap Ekle</button><button onclick="showPage('wishlist')">İstek Listesi</button>
 </nav>
 </header>
 <main>
 <section id="home" class="page active">
-<h1>Kütüphane</h1><div class="notice ok"><b>📚 Excel kütüphanesi yüklendi:</b> 646 kitap. Site açıldığında kitaplar tarayıcı hafızasına aktarılır.
-    <button onclick="localStorage.setItem(IMPORT_VERSION_KEY,'');location.reload()">↻ Kitapları Yeniden Yükle</button></div>
+<h1>Kütüphane</h1>
 <div class="grid">
 <div class="card"><div class="muted">Toplam kitap</div><div class="stat" id="statBooks">0</div></div>
 <div class="card"><div class="muted">Raf</div><div class="stat" id="statShelves">0</div></div>
@@ -112,6 +157,10 @@ hr{border:0;border-top:1px solid #e4ddd4;margin:18px 0}
 <div class="notice ok">🖼️ Kapaklar artık kitap alanının tamamını dolduruyor; seçim kutuları kapağın üst solunda ayrı katmanda duruyor. Bulunan kitap kapakları bu tarayıcıda saklanır; sonraki girişlerde yeniden aratılmaz. Raflar genişletildi, kapaklar daha net görünür.</div><div class="actions" style="margin-bottom:10px">
 <button type="button" onclick="exportLibraryPDF()">📄 Gerçek PDF Oluştur</button>
 </div>
+<div style="margin:10px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+<button type="button" onclick="fillAllMissingCovers()">🖼️ Fotoğrafsız Kitapların Kapaklarını Tamamla</button>
+<span id="coverFillStatus" class="muted">Eksik kapakları bulup kalıcı olarak kaydeder.</span>
+</div>
 <div class="shelfSearch" style="margin:12px 0;display:flex;gap:8px;align-items:center">
 <input id="shelfBookSearch" type="search" placeholder="🔎 Kitaplıkta kitap ara..." oninput="searchShelfBook()" style="flex:1">
 <button type="button" class="secondary" onclick="clearShelfBookSearch()">Temizle</button>
@@ -155,13 +204,7 @@ hr{border:0;border-top:1px solid #e4ddd4;margin:18px 0}
 
 <section id="wishlist" class="page"><h1>⭐ İstek Listesi</h1><div class="card"><div id="wishList"></div></div></section>
 
-<section id="backup" class="page">
-<h1>💾 Yedekleme</h1>
-<div class="card"><p>Kitaplar, raflar ve istek listesi tek JSON dosyasına aktarılır. Bu sürüm verileri tarayıcının yerel depolamasında tutar.</p>
-<div class="actions"><button onclick="exportData()">⬇️ Yedek Al</button><button class="secondary" onclick="document.getElementById('importFile').click()">⬆️ Yedeği Geri Yükle</button><input id="importFile" type="file" accept=".json" style="display:none" onchange="importData(event)"></div>
-<div class="notice warn">Not: Bu prototipte veriler cihaz/tarayıcıya özeldir. İnternete bağlı bir sunucuya otomatik gönderilmez.</div>
-</div>
-</section>
+
 </main>
 
 <div id="modal" class="modal"><div class="modalbox" id="modalBox"></div></div>
@@ -678,6 +721,85 @@ function goToShelfBook(id){
     }
   },120);
 }
+
+function getPersistentCoverCache(){
+  try{return JSON.parse(localStorage.getItem('feros_cover_cache')||'{}')}catch(e){return {}}
+}
+function setPersistentCoverCache(c){
+  try{localStorage.setItem('feros_cover_cache',JSON.stringify(c))}catch(e){}
+}
+function coverKeyForBook(b){
+  const isbn=String(b.isbn||'').replace(/\D/g,'');
+  return isbn?'isbn:'+isbn:'title:'+normalizeTR(String(b.title||'')+'|'+String(b.author||''));
+}
+function dataUrlFromImage(url){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.crossOrigin='anonymous';
+    img.onload=()=>{
+      try{
+        const c=document.createElement('canvas');
+        const max=900, scale=Math.min(1,max/Math.max(img.naturalWidth||1,img.naturalHeight||1));
+        c.width=Math.max(1,Math.round((img.naturalWidth||300)*scale));
+        c.height=Math.max(1,Math.round((img.naturalHeight||400)*scale));
+        c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+        resolve(c.toDataURL('image/jpeg',.9));
+      }catch(e){reject(e)}
+    };
+    img.onerror=reject;
+    img.src=url;
+  });
+}
+async function findBookCoverOnline(b){
+  const isbn=String(b.isbn||'').replace(/\D/g,'');
+  const q=isbn?`isbn:${isbn}`:`intitle:${encodeURIComponent(b.title||'')}${b.author?'&inauthor:'+encodeURIComponent(b.author):''}`;
+  const url='https://www.googleapis.com/books/v1/volumes?q='+q+'&maxResults=5';
+  const r=await fetch(url); if(!r.ok)throw new Error('Google Books');
+  const j=await r.json();
+  const items=j.items||[];
+  for(const item of items){
+    const info=item.volumeInfo||{};
+    const img=info.imageLinks?.thumbnail||info.imageLinks?.smallThumbnail;
+    if(img){
+      const clean=img.replace(/^http:/,'https:');
+      try{return await dataUrlFromImage(clean)}catch(e){}
+    }
+  }
+  return '';
+}
+async function fillAllMissingCovers(){
+  const missing=data.books.filter(b=>!b.cover);
+  const status=document.getElementById('coverFillStatus');
+  if(!missing.length){if(status)status.textContent='✅ Tüm kitapların kapağı zaten var.';return}
+  if(status)status.textContent=`⏳ ${missing.length} kitabın kapağı aranıyor...`;
+  const cache=getPersistentCoverCache();
+  let found=0, failed=0;
+  for(let i=0;i<missing.length;i++){
+    const b=missing[i], key=coverKeyForBook(b);
+    try{
+      let cover=cache[key]||'';
+      if(!cover) cover=await findBookCoverOnline(b);
+      if(cover){
+        b.cover=cover;
+        cache[key]=cover;
+        rememberCover(b);
+        found++;
+      }else failed++;
+    }catch(e){failed++}
+    if(status)status.textContent=`⏳ ${i+1}/${missing.length} işlendi — ${found} kapak bulundu`;
+    save();
+    renderShelves();
+  }
+  setPersistentCoverCache(cache);
+  save();
+  renderShelves();
+  if(status)status.textContent=`✅ Tamamlandı: ${found} kapak eklendi${failed?`, ${failed} kitap için kapak bulunamadı`:''}.`;
+}
+
+function applyPersistentCoverCache(){
+  const c=getPersistentCoverCache();
+  (data.books||[]).forEach(b=>{if(!b.cover&&c[coverKeyForBook(b)])b.cover=c[coverKeyForBook(b)];});
+}
 function renderShelves(){
   let el=document.getElementById('shelvesView');
   if(!el)return;
@@ -995,8 +1117,6 @@ function toggleWish(id){
   data.wishlist.push({id:crypto.randomUUID(),title:b.title||'',author:b.author||'',isbn:b.isbn||'',cover:b.cover||'',publisher:b.publisher||'',year:b.year||'',pages:b.pages||'',added:new Date().toISOString()});
   save();renderWishlist();
 }
-function exportData(){let blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='kutuphane-yedek.json';a.click();URL.revokeObjectURL(a.href)}
-function importData(e){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=()=>{try{let d=JSON.parse(r.result);if(!d.books||!d.shelves)throw Error();data=d;save();alert('Yedek geri yüklendi.')}catch(x){alert('Geçersiz yedek dosyası.')}};r.readAsText(f)}
 let stream=null, scanTimer=null;
 async function openScanner(){document.getElementById('modalBox').innerHTML=`<h2>📷 ISBN Barkod Tara</h2><video id="video" class="camera" autoplay playsinline></video><div id="scanMsg" class="notice">Kamerayı kitabın barkoduna tut.</div><div class="actions"><button onclick="stopScanner()">Kapat</button></div>`;document.getElementById('modal').classList.add('open');try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}});let v=document.getElementById('video');v.srcObject=stream;if('BarcodeDetector'in window){let detector=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128']});scanTimer=setInterval(async()=>{try{let codes=await detector.detect(v);if(codes[0]){let val=codes[0].rawValue;document.getElementById('isbn').value=val;stopScanner();showPage('add');lookupISBN()}}catch(e){}},500)}else document.getElementById('scanMsg').textContent='Bu tarayıcı BarcodeDetector desteklemiyor. ISBN numarasını Kitap Ekle ekranına elle girebilirsin.'}catch(e){document.getElementById('scanMsg').innerHTML='<div class="notice bad">Kamera açılamadı. Tarayıcı kamera izni vermeli ve sayfa HTTPS/localhost üzerinden açılmalı.</div>'}}
 function stopScanner(){if(scanTimer)clearInterval(scanTimer);scanTimer=null;if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}document.getElementById('modal').classList.remove('open')}
@@ -1150,7 +1270,7 @@ async function enrichAllBookEditions(){
   if(changed)save();
   renderShelves();
 }
-data=JSON.parse(localStorage.getItem(KEY)||JSON.stringify(IMPORTED_LIBRARY));
+data=JSON.parse(localStorage.getItem(KEY)||'null')||IMPORTED_LIBRARY;
 data.books.forEach(restoreCover);
 const COVER_ENRICH_VERSION_KEY=KEY+'_cover_enrich_v1';
 const COVER_ENRICH_VERSION='v1';
@@ -1168,6 +1288,1197 @@ function removeDuplicateBookPlacements(){
 }
 renderAll();
 if(localStorage.getItem(COVER_ENRICH_VERSION_KEY)!==COVER_ENRICH_VERSION){localStorage.setItem(COVER_ENRICH_VERSION_KEY,COVER_ENRICH_VERSION);setTimeout(()=>enrichAllBookEditions(),500);}
+</script>
+
+<script>
+function authMsg(text,ok=false){
+  const e=document.getElementById("authMsg");
+  if(!e)return;
+  e.style.display="block";
+  e.style.background=ok?"#eaf7ee":"#fff1f1";
+  e.textContent=text;
+}
+
+async function authSignIn(){
+  try{
+    const sb=await initSupabase();
+    const email=document.getElementById("authEmail").value.trim();
+    const password=document.getElementById("authPassword").value;
+    if(!email||!password){authMsg("E-posta ve şifreyi gir.");return;}
+    const {error}=await sb.auth.signInWithPassword({email,password});
+    if(error)throw error;
+  }catch(e){
+    authMsg(e.message||"Giriş başarısız.");
+  }
+}
+
+async function authReset(){
+  try{
+    const sb=await initSupabase();
+    const email=document.getElementById("authEmail").value.trim();
+    if(!email){authMsg("Önce e-posta adresini yaz.");return;}
+    const {error}=await sb.auth.resetPasswordForEmail(email,{
+      redirectTo:location.origin+location.pathname
+    });
+    if(error)throw error;
+    authMsg("Şifre sıfırlama bağlantısı gönderildi.",true);
+  }catch(e){
+    authMsg(e.message||"Şifre sıfırlama başarısız.");
+  }
+}
+
+async function authSignOut(){
+  try{
+    const sb=await initSupabase();
+    await sb.auth.signOut();
+    location.reload();
+  }catch(e){console.error(e);}
+}
+
+async function authBoot(){
+  try{
+    const sb=await initSupabase();
+    const {data:{session},error}=await sb.auth.getSession();
+    if(error)throw error;
+
+    if(session){
+      currentSupabaseUser=session.user;
+      window.currentSupabaseUser=currentSupabaseUser;
+      window.currentUserId=session.user.id;
+      document.getElementById("authGate").style.display="none";
+      return;
+    }
+
+    document.getElementById("authGate").style.display="flex";
+
+    sb.auth.onAuthStateChange((_event,newSession)=>{
+      currentSupabaseUser=newSession?.user||null;
+      window.currentSupabaseUser=currentSupabaseUser;
+      window.currentUserId=currentSupabaseUser?.id||null;
+      document.getElementById("authGate").style.display=
+        currentSupabaseUser?"none":"flex";
+    });
+  }catch(e){
+    console.error("Auth:",e);
+    document.getElementById("authGate").style.display="flex";
+    authMsg("Giriş sistemi başlatılamadı. Supabase bağlantısını kontrol et.");
+  }
+}
+
+document.addEventListener("DOMContentLoaded",authBoot);
+</script>
+
+<script>
+document.addEventListener("DOMContentLoaded",()=>{
+  const b=document.createElement("button");
+  b.id="libraryLogout";
+  b.type="button";
+  b.textContent="🚪 Çıkış";
+  b.onclick=authSignOut;
+  b.style.cssText="position:fixed;right:14px;top:14px;z-index:9998;display:none;padding:8px 12px;border-radius:10px;border:1px solid #ddd;background:#fff;cursor:pointer";
+  document.body.appendChild(b);
+  const old=window.authBoot;
+  const watch=setInterval(()=>{
+    if(currentSupabaseUser){
+      b.style.display="block";
+      clearInterval(watch);
+    }
+  },300);
+});
+</script>
+
+<script>
+/* =========================================================
+   SUPABASE TEST SENKRONİZASYONU
+   Mevcut 646 kitabı değiştirmez. UUID olan yeni kitapları
+   güvenli şekilde library_books tablosuna yazar.
+   ========================================================= */
+async function syncNewBooksToSupabase(){
+  try{
+    if(!currentSupabaseUser) return;
+    const sb=await initSupabase();
+
+    const books=(data?.books||[]).filter(b=>{
+      return b && typeof b.id==="string" &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(b.id);
+    });
+
+    if(!books.length) return;
+
+    const rows=books.map(b=>({
+      id:b.id,
+      user_id:currentSupabaseUser.id,
+      title:b.title||"Kitap",
+      author:b.author||null,
+      isbn:b.isbn||null,
+      publisher:b.publisher||null,
+      year:b.year ? String(b.year) : null,
+      pages:b.pages!=="" && b.pages!=null ? Number(b.pages)||null : null,
+      genre:b.genre||null,
+      cover:b.cover||null,
+      shelf:b.shelf||null,
+      row_number:b.row!=null && b.row!=="" ? Number(b.row)||null : null,
+      position:b.pos!=null && b.pos!=="" ? Number(b.pos)||null : null,
+      status:b.status||"unread",
+      notes:b.notes||null,
+      updated_at:new Date().toISOString()
+    }));
+
+    const {error}=await sb.from("library_books").upsert(rows,{onConflict:"id"});
+    if(error) throw error;
+
+    console.log("Supabase: yeni kitaplar kaydedildi.",rows.length);
+  }catch(e){
+    console.error("Supabase kitap kaydı:",e);
+  }
+}
+
+/* save() mevcut yerel sistemi aynen çalıştırmaya devam eder;
+   ardından buluta da yazar. */
+const originalLibrarySave=window.save;
+if(typeof originalLibrarySave==="function"){
+  window.save=function(){
+    const result=originalLibrarySave.apply(this,arguments);
+    setTimeout(()=>syncNewBooksToSupabase(),50);
+    return result;
+  };
+}
+
+/* Girişten sonra mevcut yeni/test kitaplarını da bir kez gönder. */
+document.addEventListener("DOMContentLoaded",()=>{
+  const wait=setInterval(()=>{
+    if(currentSupabaseUser){
+      clearInterval(wait);
+      setTimeout(syncNewBooksToSupabase,500);
+    }
+  },300);
+});
+</script>
+
+<style>
+#cloudMigrationBtn{
+  position:fixed;left:16px;bottom:16px;z-index:9998;
+  display:none;padding:11px 15px;border:1px solid #d8d0c5;
+  border-radius:12px;background:#fff;box-shadow:0 5px 18px rgba(0,0,0,.12);
+  cursor:pointer;font-weight:700
+}
+#cloudMigrationBox{
+  position:fixed;left:16px;bottom:68px;z-index:9999;width:min(390px,calc(100vw - 32px));
+  display:none;background:#fff;border:1px solid #ddd;border-radius:14px;
+  box-shadow:0 12px 35px rgba(0,0,0,.16);padding:14px;box-sizing:border-box
+}
+#cloudMigrationBar{height:9px;background:#eee;border-radius:99px;overflow:hidden;margin-top:9px}
+#cloudMigrationFill{height:100%;width:0;background:#555;transition:width .2s}
+#cloudMigrationText{font-size:13px;color:#555;margin-top:8px;line-height:1.35}
+</style>
+
+
+  <div id="cloudMigrationBar"><div id="cloudMigrationFill"></div></div>
+</div>
+
+<script>
+/* =========================================================
+   TÜM KÜTÜPHANEYİ SUPABASE'E AKTAR
+   Eski "excel-1" gibi ID'leri yerel olarak UUID'lere eşler.
+   Böylece mevcut kitapların yerel ID'leri değişmez.
+   ========================================================= */
+const CLOUD_ID_MAP_KEY = KEY + "_supabase_id_map_v1";
+
+function getCloudIdMap(){
+  try{return JSON.parse(localStorage.getItem(CLOUD_ID_MAP_KEY)||"{}")||{}}
+  catch(e){return {}}
+}
+function saveCloudIdMap(m){
+  localStorage.setItem(CLOUD_ID_MAP_KEY,JSON.stringify(m));
+}
+function cloudUUID(originalId,prefix){
+  const map=getCloudIdMap();
+  const key=prefix+":"+String(originalId);
+  if(map[key]) return map[key];
+
+  let id;
+  if(window.crypto && crypto.randomUUID) id=crypto.randomUUID();
+  else id="xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,c=>{
+    const r=Math.random()*16|0,v=c==="x"?r:(r&3|8);
+    return v.toString(16);
+  });
+
+  map[key]=id;
+  saveCloudIdMap(map);
+  return id;
+}
+
+function cloudSetProgress(done,total,text){
+  const pct=total?Math.round(done/total*100):0;
+  const fill=document.getElementById("cloudMigrationFill");
+  const msg=document.getElementById("cloudMigrationText");
+  if(fill)fill.style.width=pct+"%";
+  if(msg)msg.textContent=text+"  "+done+" / "+total;
+}
+
+async function cloudBatchInsert(sb,table,rows){
+  const BATCH=100;
+  for(let i=0;i<rows.length;i+=BATCH){
+    const part=rows.slice(i,i+BATCH);
+    const {error}=await sb.from(table).upsert(part,{onConflict:"id"});
+    if(error) throw error;
+  }
+}
+
+async function migrateEntireLibraryToSupabase(){
+  const btn=document.getElementById("cloudMigrationBtn");
+  const box=document.getElementById("cloudMigrationBox");
+  const msg=document.getElementById("cloudMigrationText");
+  try{
+    const sb=await initSupabase();
+    const {data:{session}}=await sb.auth.getSession();
+    if(!session){
+      alert("Önce kitaplık hesabınla giriş yapmalısın.");
+      return;
+    }
+
+    currentSupabaseUser=session.user;
+    btn.disabled=true;
+    btn.style.opacity=".6";
+    box.style.display="block";
+
+    const books=Array.isArray(data.books)?data.books:[];
+    const shelves=Array.isArray(data.shelves)?data.shelves:[];
+    const wishlist=Array.isArray(data.wishlist)?data.wishlist:[];
+
+    const total=books.length+shelves.length+wishlist.length;
+    let done=0;
+
+    /* 1) Kitaplar */
+    const bookRows=books.map((b)=>({
+      id: cloudUUID(b.id,"book"),
+      user_id:session.user.id,
+      title:b.title||"Kitap",
+      author:b.author||null,
+      isbn:b.isbn||null,
+      publisher:b.publisher||null,
+      year:b.year?String(b.year):null,
+      pages:b.pages!==""&&b.pages!=null?(Number(b.pages)||null):null,
+      genre:b.genre||null,
+      cover:b.cover||null,
+      shelf:b.shelf||null,
+      row_number:b.row!=null&&b.row!==""?(Number(b.row)||null):null,
+      position:b.pos!=null&&b.pos!==""?(Number(b.pos)||null):null,
+      status:b.status||"unread",
+      notes:b.notes||null,
+      updated_at:new Date().toISOString()
+    }));
+
+    const BATCH=75;
+    for(let i=0;i<bookRows.length;i+=BATCH){
+      const part=bookRows.slice(i,i+BATCH);
+      const {error}=await sb.from("library_books").upsert(part,{onConflict:"id"});
+      if(error)throw error;
+      done+=part.length;
+      cloudSetProgress(done,total,"Kitaplar aktarılıyor...");
+    }
+
+    /* 2) Raflar */
+    const shelfRows=shelves.map((s)=>({
+      id:cloudUUID(s.id||s.name,"shelf"),
+      user_id:session.user.id,
+      name:s.name||"Raf",
+    }));
+    for(let i=0;i<shelfRows.length;i+=BATCH){
+      const part=shelfRows.slice(i,i+BATCH);
+      const {error}=await sb.from("library_shelves").upsert(part,{onConflict:"id"});
+      if(error)throw error;
+      done+=part.length;
+      cloudSetProgress(done,total,"Raflar aktarılıyor...");
+    }
+
+    /* 3) İstek listesi */
+    const wishlistRows=wishlist
+      .filter(x=>x&&typeof x==="object")
+      .map((x)=>({
+        id:cloudUUID(x.id||((x.title||"")+"|"+(x.author||"")),"wishlist"),
+        user_id:session.user.id,
+        title:x.title||"Kitap",
+        author:x.author||null,
+        isbn:x.isbn||null,
+        publisher:x.publisher||null,
+        year:x.year?String(x.year):null,
+        pages:x.pages!==""&&x.pages!=null?(Number(x.pages)||null):null,
+        cover:x.cover||null,
+        source:x.source||null
+      }));
+    for(let i=0;i<wishlistRows.length;i+=BATCH){
+      const part=wishlistRows.slice(i,i+BATCH);
+      const {error}=await sb.from("library_wishlist").upsert(part,{onConflict:"id"});
+      if(error)throw error;
+      done+=part.length;
+      cloudSetProgress(done,total,"İstek listesi aktarılıyor...");
+    }
+
+    cloudSetProgress(total,total,"Aktarım tamamlandı!");
+    msg.textContent="Aktarım tamamlandı. "+books.length+" kitap, "+shelves.length+" raf ve "+wishlistRows.length+" istek listesi kaydı Supabase'e aktarıldı.";
+    alert("Aktarım tamamlandı!\\n\\nKitap: "+books.length+"\\nRaf: "+shelves.length+"\\nİstek listesi: "+wishlistRows.length);
+  }catch(e){
+    console.error("Toplu Supabase aktarımı:",e);
+    const msg=document.getElementById("cloudMigrationText");
+    if(msg)msg.textContent="Aktarım sırasında hata: "+(e.message||e);
+    alert("Aktarım tamamlanamadı:\\n"+(e.message||e));
+  }finally{
+    btn.disabled=false;
+    btn.style.opacity="1";
+  }
+}
+
+/* Bulut aktarım UI'si kaldırıldı; senkronizasyon otomatik çalışır. */
+</script>
+
+
+<script>
+/* =========================================================
+   OTOMATİK SUPABASE SENKRONİZASYONU
+   Bundan sonra kitaplıkta yapılan kaydetme işlemleri:
+   localStorage + Supabase birlikte güncellenir.
+   ========================================================= */
+(function(){
+  const originalSaveForCloud = window.save;
+  let cloudSyncRunning = false;
+  let cloudSyncQueued = false;
+
+  function cloudId(localId, type){
+    const map = getCloudIdMap();
+    const key = type + ":" + String(localId);
+    if(map[key]) return map[key];
+    const id = (crypto && crypto.randomUUID) ? crypto.randomUUID() :
+      "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,c=>{
+        const r=Math.random()*16|0, v=c==="x"?r:(r&3|8);
+        return v.toString(16);
+      });
+    map[key]=id;
+    saveCloudIdMap(map);
+    return id;
+  }
+
+  function bookRow(b){
+    return {
+      id: cloudId(b.id,"book"),
+      user_id: currentSupabaseUser.id,
+      title: b.title || "Kitap",
+      author: b.author || null,
+      isbn: b.isbn || null,
+      publisher: b.publisher || null,
+      year: b.year ? String(b.year) : null,
+      pages: b.pages!=="" && b.pages!=null ? (Number(b.pages)||null) : null,
+      genre: b.genre || null,
+      cover: b.cover || null,
+      shelf: b.shelf || null,
+      row_number: b.row!=null && b.row!=="" ? (Number(b.row)||null) : null,
+      position: b.pos!=null && b.pos!=="" ? (Number(b.pos)||null) : null,
+      status: b.status || "unread",
+      notes: b.notes || null,
+      updated_at: new Date().toISOString()
+    };
+  }
+
+  async function doCloudSync(){
+    if(cloudSyncRunning){ cloudSyncQueued=true; return; }
+    if(!window.currentSupabaseUser || !window.data) return;
+
+    cloudSyncRunning=true;
+    try{
+      const sb=await initSupabase();
+      const uid=currentSupabaseUser.id;
+      const books=Array.isArray(data.books)?data.books:[];
+      const shelves=Array.isArray(data.shelves)?data.shelves:[];
+      const wishlist=Array.isArray(data.wishlist)?data.wishlist:[];
+
+      // Kitaplar
+      const rows=books.map(bookRow);
+      for(let i=0;i<rows.length;i+=75){
+        const {error}=await sb.from("library_books")
+          .upsert(rows.slice(i,i+75),{onConflict:"id"});
+        if(error) throw error;
+      }
+
+      // Raflar
+      const shelfRows=shelves.map((s,i)=>({
+        id:cloudId(s.id || s.name || ("shelf-"+i),"shelf"),
+        user_id:uid,
+        name:s.name || "Raf"
+      }));
+      for(let i=0;i<shelfRows.length;i+=75){
+        const {error}=await sb.from("library_shelves")
+          .upsert(shelfRows.slice(i,i+75),{onConflict:"id"});
+        if(error) throw error;
+      }
+
+      // İstek listesi
+      const wishRows=wishlist.filter(Boolean).map((x,i)=>({
+        id:cloudId(x.id || ((x.title||"")+"|"+(x.author||"")+"|"+i),"wishlist"),
+        user_id:uid,
+        title:x.title || "Kitap",
+        author:x.author || null,
+        isbn:x.isbn || null,
+        publisher:x.publisher || null,
+        year:x.year ? String(x.year) : null,
+        pages:x.pages!=="" && x.pages!=null ? (Number(x.pages)||null) : null,
+        cover:x.cover || null,
+        source:x.source || null
+      }));
+      for(let i=0;i<wishRows.length;i+=75){
+        const {error}=await sb.from("library_wishlist")
+          .upsert(wishRows.slice(i,i+75),{onConflict:"id"});
+        if(error) throw error;
+      }
+
+      console.log("☁️ Supabase senkronize edildi:",books.length,"kitap");
+    }catch(e){
+      console.warn("☁️ Supabase otomatik senkronizasyon hatası:",e);
+    }finally{
+      cloudSyncRunning=false;
+      if(cloudSyncQueued){
+        cloudSyncQueued=false;
+        setTimeout(doCloudSync,250);
+      }
+    }
+  }
+
+  // Tüm mevcut uygulama işlemleri save() üzerinden geçtiği için
+  // ekleme, silme, taşıma, okundu ve istek listesi değişiklikleri de
+  // otomatik olarak buluta gider.
+  window.save=function(){
+    const result = originalSaveForCloud.apply(this, arguments);
+    setTimeout(doCloudSync,100);
+    return result;
+  };
+
+  // Girişten sonra mevcut yerel kitaplığı bir kez daha senkronize et.
+  const bootTimer=setInterval(()=>{
+    if(currentSupabaseUser && window.data){
+      clearInterval(bootTimer);
+      setTimeout(doCloudSync,700);
+    }
+  },300);
+
+  window.syncLibraryToSupabase=doCloudSync;
+})();
+</script>
+
+<script>
+/* =========================================================
+   LOCAL -> SUPABASE EKSİK KAYIT TAMAMLAMA
+   - Local kitaplık ana kaynaktır.
+   - Supabase'deki mevcut kayıtlar silinmez.
+   - Local'da olup bulutta olmayan kayıtlar eklenir.
+   - Aynı kitap ikinci kez oluşturulmaz; cloud UUID eşlemesi korunur.
+   ========================================================= */
+async function reconcileLocalLibraryToCloud(){
+  const box=document.getElementById("reconcileCloudBox");
+  const text=document.getElementById("reconcileCloudText");
+  const btn=document.getElementById("reconcileCloudBtn");
+
+  if(box) box.style.display="block";
+  if(!currentSupabaseUser){
+    if(text) text.textContent="Önce kitaplık hesabınla giriş yapmalısın.";
+    return;
+  }
+
+  btn.disabled=true;
+  btn.style.opacity=".65";
+
+  try{
+    const sb=await initSupabase();
+    const uid=currentSupabaseUser.id;
+    const books=Array.isArray(data.books)?data.books:[];
+    const map=getCloudIdMap();
+
+    // Supabase'deki bu kullanıcının kitap ID'lerini al.
+    const {data:cloudBooks,error:readError}=await sb
+      .from("library_books")
+      .select("id,title,isbn,author")
+      .eq("user_id",uid);
+
+    if(readError) throw readError;
+
+    const cloudIds=new Set((cloudBooks||[]).map(x=>x.id));
+    const cloudIsbns=new Set(
+      (cloudBooks||[]).map(x=>(x.isbn||"").trim().toLowerCase()).filter(Boolean)
+    );
+
+    // Eski aktarımda oluşturulan eşlemeler varsa onları da hesaba kat.
+    const missing=books.filter(b=>{
+      if(!b) return false;
+      const mapped=map["book:"+String(b.id)];
+      if(mapped && cloudIds.has(mapped)) return false;
+
+      const isbn=(b.isbn||"").trim().toLowerCase();
+      if(isbn && cloudIsbns.has(isbn)) return false;
+
+      // Başlık + yazar aynıysa mevcut kaydı tekrar oluşturma.
+      const title=(b.title||"").trim().toLowerCase();
+      const author=(b.author||"").trim().toLowerCase();
+      if(title && (cloudBooks||[]).some(c=>
+        (c.title||"").trim().toLowerCase()===title &&
+        (c.author||"").trim().toLowerCase()===author
+      )) return false;
+
+      return true;
+    });
+
+    if(!missing.length){
+      if(text) text.textContent="Eksik kitap yok. Supabase zaten yerel kitaplığınla eşleşiyor.";
+      return;
+    }
+
+    const rows=missing.map(b=>({
+      id: cloudUUID(b.id,"book"),
+      user_id:uid,
+      title:b.title||"Kitap",
+      author:b.author||null,
+      isbn:b.isbn||null,
+      publisher:b.publisher||null,
+      year:b.year?String(b.year):null,
+      pages:b.pages!==""&&b.pages!=null?(Number(b.pages)||null):null,
+      genre:b.genre||null,
+      cover:b.cover||null,
+      shelf:b.shelf||null,
+      row_number:b.row!=null&&b.row!==""?(Number(b.row)||null):null,
+      position:b.pos!=null&&b.pos!==""?(Number(b.pos)||null):null,
+      status:b.status||"unread",
+      notes:b.notes||null,
+      updated_at:new Date().toISOString()
+    }));
+
+    for(let i=0;i<rows.length;i+=75){
+      const part=rows.slice(i,i+75);
+      const {error}=await sb.from("library_books").upsert(part,{onConflict:"id"});
+      if(error) throw error;
+      if(text) text.textContent="Eksik kitaplar aktarılıyor... "+Math.min(i+75,rows.length)+"/"+rows.length;
+    }
+
+    if(text) text.textContent=rows.length+" eksik kitap Supabase'e tamamlandı.";
+    alert("Tamamlandı! "+rows.length+" eksik kitap Supabase'e eklendi.");
+  }catch(e){
+    console.error(e);
+    if(text) text.textContent="Hata: "+(e.message||e);
+    alert("Senkronizasyon hatası: "+(e.message||e));
+  }finally{
+    btn.disabled=false;
+    btn.style.opacity="1";
+  }
+}
+</script>
+
+<script>
+async function reconcileMissingBooksSafe(){
+ const btn=document.getElementById("reconcileCloudBtn"),box=document.getElementById("reconcileCloudBox"),text=document.getElementById("reconcileCloudText");
+ if(box)box.style.display="block";
+ if(!currentSupabaseUser){if(text)text.textContent="Önce giriş yapmalısın.";return}
+ if(btn){btn.disabled=true;btn.style.opacity=".65"}
+ try{
+  const sb=await initSupabase(),uid=currentSupabaseUser.id,local=Array.isArray(data?.books)?data.books:[];
+  let cloud=[];
+  for(let from=0;;from+=1000){
+   const {data:rows,error}=await sb.from("library_books").select("id,title,author,isbn").eq("user_id",uid).range(from,from+999);
+   if(error)throw error; cloud=cloud.concat(rows||[]); if(!rows||rows.length<1000)break;
+  }
+  const norm=v=>String(v??"").normalize("NFKC").trim().toLocaleLowerCase("tr-TR").replace(/\s+/g," ");
+  const ids=new Set(cloud.map(x=>String(x.id)));
+  const isbns=new Set(cloud.map(x=>norm(x.isbn)).filter(Boolean));
+  const pairs=new Set(cloud.map(x=>norm(x.title)+"||"+norm(x.author)));
+  const map=getCloudIdMap(),missing=[];
+  for(const b of local){
+   if(!b)continue;
+   const mapped=map["book:"+String(b.id)];
+   if(mapped&&ids.has(String(mapped)))continue;
+   const isbn=norm(b.isbn),pair=norm(b.title)+"||"+norm(b.author);
+   if(isbn&&isbns.has(isbn))continue;
+   if(pair!=="||"&&pairs.has(pair))continue;
+   missing.push(b);
+  }
+  if(!missing.length){if(text)text.innerHTML="<b>Eksik kitap yok.</b><br>Supabase'de "+cloud.length+" kayıt var.";return}
+  if(text)text.textContent="Eksik "+missing.length+" kitap aktarılıyor...";
+  for(let i=0;i<missing.length;i+=50){
+   const rows=missing.slice(i,i+50).map(b=>({
+    id:cloudUUID(b.id,"book"),user_id:uid,title:b.title||"Kitap",author:b.author||null,isbn:b.isbn||null,
+    publisher:b.publisher||null,year:b.year?String(b.year):null,pages:b.pages!==""&&b.pages!=null?(Number(b.pages)||null):null,
+    genre:b.genre||null,cover:b.cover||null,shelf:b.shelf||null,row_number:b.row!=null&&b.row!==""?(Number(b.row)||null):null,
+    position:b.pos!=null&&b.pos!==""?(Number(b.pos)||null):null,status:b.status||"unread",notes:b.notes||null,updated_at:new Date().toISOString()
+   }));
+   const {error}=await sb.from("library_books").upsert(rows,{onConflict:"id"});if(error)throw error;
+  }
+  if(text)text.innerHTML="<b>"+missing.length+" eksik kitap tamamlandı.</b><br>Yeni toplam: "+(cloud.length+missing.length);
+  alert(missing.length+" eksik kitap Supabase'e eklendi.");
+ }catch(e){console.error(e);if(text)text.textContent="Hata: "+(e.message||e);alert("Aktarım hatası: "+(e.message||e))}
+ finally{if(btn){btn.disabled=false;btn.style.opacity="1"}}
+}
+document.addEventListener("DOMContentLoaded",()=>{const b=document.getElementById("reconcileCloudBtn");if(b)b.onclick=reconcileMissingBooksSafe});
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<script>
+/* =========================================================
+   SUPABASE OTOMATİK KAYIT + KAPAK ÖNBELLEĞİ
+   Geçici test butonları yoktur.
+   Yeni/değişen kitap localStorage'a kaydedildikten sonra Supabase'e de yazılır.
+   ========================================================= */
+(function(){
+  const COVER_BUCKET="book-covers";
+
+  function getBooksFromLocalStorage(){
+    try{
+      const raw=localStorage.getItem("my-library-v1");
+      if(!raw)return [];
+      const x=JSON.parse(raw);
+      if(Array.isArray(x))return x;
+      if(Array.isArray(x.books))return x.books;
+      if(Array.isArray(x.library))return x.library;
+      if(Array.isArray(x.items))return x.items;
+      for(const k of Object.keys(x||{})){
+        if(Array.isArray(x[k]) && x[k].some(v=>v&&typeof v==="object"&&(v.title||v.name))) return x[k];
+      }
+    }catch(e){console.warn("Kitaplık okunamadı",e)}
+    return [];
+  }
+
+  async function uploadCover(book, sb, uid){
+    const src=book?.cover||book?.coverUrl||book?.image||book?.imageUrl;
+    if(!src || String(src).includes('.supabase.co/storage/v1/object/')) return src||null;
+    try{
+      const {data,error}=await sb.functions.invoke('book-cover-sync',{body:{
+        bookId:window.cloudUUID?window.cloudUUID(book.id,"book"):String(book.id),
+        coverUrl:String(src)
+      }});
+      if(error) throw error;
+      const r=(data?.results||[])[0];
+      return r?.url||src;
+    }catch(e){
+      console.warn('Kapak Edge Function aktarımı:',e);
+      return src;
+    }
+  }
+
+  async function syncOneBookToSupabase(book){
+    if(!window.currentSupabaseUser || !book || !window.initSupabase)return;
+    try{
+      const sb=await window.initSupabase();
+      const uid=window.currentSupabaseUser.id;
+      const cover=await uploadCover(book,sb,uid);
+      const row={
+        id:window.cloudUUID?window.cloudUUID(book.id,"book"):String(book.id),
+        user_id:uid,
+        title:book.title||book.name||"Kitap",
+        author:book.author||book.authors||null,
+        isbn:book.isbn||book.ISBN||null,
+        publisher:book.publisher||null,
+        year:book.year?String(book.year):null,
+        pages:book.pages!==""&&book.pages!=null?(Number(book.pages)||null):null,
+        genre:book.genre||book.category||null,
+        cover:cover||null,
+        shelf:book.shelf||book.raf||null,
+        row_number:book.row!=null&&book.row!==""?(Number(book.row)||null):null,
+        position:book.pos!=null&&book.pos!==""?(Number(book.pos)||null):null,
+        status:book.status||"unread",
+        notes:book.notes||null,
+        updated_at:new Date().toISOString()
+      };
+      const {error}=await sb.from("library_books").upsert(row,{onConflict:"id"});
+      if(error) throw error;
+
+      // Update the local book's cover with the permanent Storage URL.
+      if(cover && cover!==book.cover){
+        book.cover=cover;
+        const books=getBooksFromLocalStorage();
+        const i=books.findIndex(b=>String(b.id)===String(book.id));
+        if(i>=0){
+          books[i]={...books[i],cover};
+          const raw=localStorage.getItem("my-library-v1");
+          let state;
+          try{state=raw?JSON.parse(raw):books}catch(e){state=books}
+          if(Array.isArray(state)) localStorage.setItem("my-library-v1",JSON.stringify(books));
+          else if(state&&Array.isArray(state.books)){state.books=books;localStorage.setItem("my-library-v1",JSON.stringify(state));}
+        }
+      }
+      return true;
+    }catch(e){
+      console.error("Supabase otomatik kayıt:",e);
+      return false;
+    }
+  }
+
+  // Expose a reusable function for the app's existing add/edit flows.
+  window.syncBookToSupabase=syncOneBookToSupabase;
+
+  // If the app emits a CustomEvent after saving, support it automatically.
+  window.addEventListener("book:saved",e=>{
+    if(e.detail?.book) syncOneBookToSupabase(e.detail.book);
+  });
+  window.addEventListener("library:book-saved",e=>{
+    if(e.detail?.book) syncOneBookToSupabase(e.detail.book);
+  });
+
+  // Make the sync callable from inline app code without changing the UI.
+  window.__supabaseAutoSyncBook=syncOneBookToSupabase;
+
+  // On login, pre-warm existing cloud covers by keeping their permanent URLs.
+  // Do not download remote covers at page load: the Storage URL is immediately
+  // renderable and browser-cached.
+  async function syncCoversViaEdgeFunction(){
+    if(!window.currentSupabaseUser || !window.initSupabase || !window.data) return;
+    const sb=await window.initSupabase();
+    const books=Array.isArray(data.books)?data.books:[];
+    const items=books.map(b=>({
+      bookId:window.cloudUUID?window.cloudUUID(b.id,"book"):String(b.id),
+      coverUrl:b.cover||b.coverUrl||b.image||b.imageUrl||''
+    })).filter(x=>x.coverUrl && !String(x.coverUrl).includes('.supabase.co/storage/v1/object/'));
+    let uploaded=0,already=0,failed=0;
+    for(let i=0;i<items.length;i+=25){
+      try{
+        const {data:res,error}=await sb.functions.invoke('book-cover-sync',{body:{items:items.slice(i,i+25)}});
+        if(error) throw error;
+        for(const r of (res?.results||[])){
+          if(r.status==='uploaded'){uploaded++; const b=books.find(x=>String(window.cloudUUID?window.cloudUUID(x.id,"book"):x.id)===String(r.bookId)); if(b&&r.url)b.cover=r.url;}
+          else if(r.status==='already') already++;
+          else if(r.status==='error') failed++;
+        }
+      }catch(e){
+        failed+=Math.min(25,items.length-i);
+        console.warn('Kapak toplu Edge Function:',e);
+      }
+    }
+    try{localStorage.setItem('my-library-v1',JSON.stringify(window.data));}catch(e){}
+    console.log('☁️ Kapak Edge aktarımı:',{uploaded,already,failed});
+    if(typeof renderAll==='function') renderAll();
+    return {uploaded,already,failed};
+  }
+  window.syncCoversViaEdgeFunction=syncCoversViaEdgeFunction;
+
+  async function cloudBoot(){
+    if(!window.currentSupabaseUser || !window.initSupabase)return;
+    try{
+      const sb=await window.initSupabase(),uid=window.currentSupabaseUser.id;
+      let rows=[];
+      for(let from=0;;from+=1000){
+        const {data,error}=await sb.from("library_books").select("*").eq("user_id",uid).range(from,from+999);
+        if(error)throw error;
+        rows=rows.concat(data||[]);
+        if(!data||data.length<1000)break;
+      }
+      if(!rows.length)return;
+
+      const local=getBooksFromLocalStorage();
+      const byTitle=new Map(local.map(b=>[(String(b.title||"")+"||"+String(b.author||"")).toLocaleLowerCase("tr-TR"),b]));
+      let changed=false;
+      for(const r of rows){
+        const b=byTitle.get((String(r.title||"")+"||"+String(r.author||"")).toLocaleLowerCase("tr-TR"));
+        if(b && r.cover && b.cover!==r.cover){
+          b.cover=r.cover; changed=true;
+        }
+      }
+      if(changed){
+        const raw=localStorage.getItem("my-library-v1");
+        let state; try{state=raw?JSON.parse(raw):local}catch(e){state=local}
+        if(Array.isArray(state))localStorage.setItem("my-library-v1",JSON.stringify(local));
+        else if(state&&Array.isArray(state.books)){state.books=local;localStorage.setItem("my-library-v1",JSON.stringify(state));}
+      }
+    }catch(e){console.warn("Bulut başlangıç senkronu:",e)}
+  }
+
+  document.addEventListener("DOMContentLoaded",()=>setTimeout(cloudBoot,900));
+})();
+</script>
+
+
+<script>
+(function(){
+ const t=setInterval(async()=>{
+   if(window.currentSupabaseUser && window.data && typeof window.syncLibraryToSupabase==='function'){
+     clearInterval(t);
+     await window.syncLibraryToSupabase();
+     setTimeout(()=>window.syncCoversViaEdgeFunction&&window.syncCoversViaEdgeFunction(),1200);
+   }
+ },500);
+ window.addEventListener('book:saved',e=>{
+   if(e.detail?.book && window.syncBookToSupabase) setTimeout(()=>window.syncBookToSupabase(e.detail.book),150);
+ });
+})();
+</script>
+
+<style>
+#directCoverPanel{position:fixed;right:16px;bottom:16px;z-index:2147483647;background:#fff;border:1px solid #ddd;border-radius:14px;padding:12px 14px;min-width:300px;max-width:400px;box-shadow:0 8px 28px rgba(0,0,0,.16);font:13px Arial,sans-serif}
+</style>
+<div id="directCoverPanel"><b>🖼️ Kapakları tamamlama</b><div id="directCoverText" style="margin-top:6px">Kitaplar kontrol ediliyor…</div></div>
+<script>
+(async function(){
+ const text=document.getElementById("directCoverText");
+ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+ function norm(s){return String(s||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9çğıöşü]+/g," ").trim();}
+ async function getClient(){
+   for(let i=0;i<60;i++){
+     try{
+       if(typeof initSupabase==="function"){
+         const sb=await initSupabase();
+         const {data:{session}}=await sb.auth.getSession();
+         if(session?.user)return {sb,user:session.user};
+       }
+     }catch(e){}
+     await sleep(500);
+   }
+   return null;
+ }
+ async function google(title,author,isbn){
+   const queries=[];
+   if(isbn) queries.push("isbn:"+encodeURIComponent(String(isbn).replace(/[^0-9Xx]/g,"")));
+   queries.push("intitle:"+encodeURIComponent(title)+(author?"+inauthor:"+encodeURIComponent(author):""));
+   for(const q of queries){
+     try{
+       const r=await fetch("https://www.googleapis.com/books/v1/volumes?q="+q+"&maxResults=20&printType=books");
+       if(!r.ok)continue;
+       const d=await r.json(), nt=norm(title), na=norm(author);
+       let best=null,score=-1;
+       for(const v of d.items||[]){
+         const i=v.volumeInfo||{}, t=norm(i.title), aa=(i.authors||[]).map(norm).join(" ");
+         const u=i.imageLinks?.large||i.imageLinks?.medium||i.imageLinks?.thumbnail||i.imageLinks?.smallThumbnail;
+         if(!u)continue;
+         let s=0;
+         if(t===nt)s+=8; else if(t.includes(nt)||nt.includes(t))s+=5;
+         if(na&&(aa.includes(na)||na.split(" ").some(x=>x.length>3&&aa.includes(x))))s+=4;
+         if(isbn&&i.industryIdentifiers?.some(x=>String(x.identifier).replace(/[^0-9Xx]/g,"")===String(isbn).replace(/[^0-9Xx]/g,"")))s+=10;
+         if(s>score){score=s;best=u;}
+       }
+       if(best)return best.replace(/^http:/,"https:");
+     }catch(e){}
+   }
+   return null;
+ }
+ async function openlib(title,author,isbn){
+   try{
+     const q=isbn?"isbn:"+encodeURIComponent(String(isbn).replace(/[^0-9Xx]/g,"")):encodeURIComponent(title+" "+author);
+     const r=await fetch("https://openlibrary.org/search.json?q="+q+"&limit=20");
+     if(!r.ok)return null;
+     const d=await r.json(),nt=norm(title),na=norm(author);
+     let best=null,score=-1;
+     for(const v of d.docs||[]){
+       if(!v.cover_i)continue;
+       let s=0,t=norm(v.title||""),aa=(v.author_name||[]).map(norm).join(" ");
+       if(t===nt)s+=8; else if(t.includes(nt)||nt.includes(t))s+=5;
+       if(na&&aa.includes(na))s+=4;
+       if(isbn&&(v.isbn||[]).some(x=>String(x).replace(/[^0-9Xx]/g,"")===String(isbn).replace(/[^0-9Xx]/g,"")))s+=10;
+       if(s>score){score=s;best="https://covers.openlibrary.org/b/id/"+v.cover_i+"-L.jpg";}
+     }
+     return best;
+   }catch(e){return null}
+ }
+ async function run(){
+   const ctx=await getClient();
+   if(!ctx){text.textContent="Supabase oturumu bulunamadı. Sayfayı yenile.";return;}
+   const {sb,user}=ctx;
+   const {data:rows,error}=await sb.from("library_books").select("id,title,author,isbn,cover").or("cover.is.null,cover.eq.").eq("user_id",user.id).limit(1000);
+   if(error){text.textContent="Kitaplar alınamadı: "+error.message;return;}
+   if(!rows?.length){text.innerHTML="<b>✅ Eksik kapak yok.</b>";return;}
+   let done=0,notfound=0,errors=0;
+   for(let i=0;i<rows.length;i+=5){
+     const batch=rows.slice(i,i+5);
+     text.textContent=`Kapak aranıyor… ${Math.min(i+batch.length,rows.length)}/${rows.length} · Bulunan ${done}`;
+     await Promise.all(batch.map(async b=>{
+       try{
+         let url=await google(b.title,b.author,b.isbn);
+         if(!url)url=await openlib(b.title,b.author,b.isbn);
+         if(!url){notfound++;return;}
+         const {error:e}=await sb.from("library_books").update({cover:url,updated_at:new Date().toISOString()}).eq("id",b.id).eq("user_id",user.id);
+         if(e)throw e;
+         // Keep the visible/local library in sync with Supabase immediately.
+         try{
+           const raw=localStorage.getItem("my-library-v1");
+           const lx=JSON.parse(raw||"null");
+           const arr=Array.isArray(lx)?lx:(Array.isArray(lx?.books)?lx.books:(Array.isArray(lx?.library)?lx.library:(Array.isArray(lx?.items)?lx.items:null)));
+           if(arr){
+             const nt=norm(b.title), na=norm(b.author);
+             const matches=arr.filter(x=>{
+               const xt=norm(x?.title||x?.name), xa=norm(x?.author||x?.authors||"");
+               return xt===nt && (!na || !xa || xa===na || xa.includes(na) || na.includes(xa));
+             });
+             for(const target of matches){
+               target.cover=url; target.coverUrl=url; target.image=url; target.imageUrl=url;
+             }
+             localStorage.setItem("my-library-v1", JSON.stringify(Array.isArray(lx)?arr:lx));
+           }
+         }catch(syncErr){ console.warn("Yerel kapak senkronizasyonu:",syncErr); }
+         done++;
+       }catch(e){errors++;console.warn("Kapak güncelleme:",e);}
+     }));
+     await sleep(300);
+   }
+   text.innerHTML=`<b>✅ Kapak taraması tamamlandı.</b><br>🟢 ${done} kapak bulundu<br>⚪ ${notfound} kaynakta bulunamadı<br>🔴 ${errors} güncelleme hatası`;
+   if(done>0){
+     // Final pass: write all newly found covers into the local shelf by title/author,
+     // because local book IDs and Supabase book IDs can differ.
+     try{
+       const raw=localStorage.getItem("my-library-v1");
+       const lx=JSON.parse(raw||"null");
+       const arr=Array.isArray(lx)?lx:(Array.isArray(lx?.books)?lx.books:(Array.isArray(lx?.library)?lx.library:(Array.isArray(lx?.items)?lx.items:null)));
+       if(arr){
+         const {data:cloud}=await sb.from("library_books").select("title,author,cover").eq("user_id",user.id).not("cover","is",null);
+         for(const c of (cloud||[])){
+           if(!c.cover) continue;
+           const nt=norm(c.title), na=norm(c.author);
+           for(const local of arr){
+             const lt=norm(local?.title||local?.name), la=norm(local?.author||local?.authors||"");
+             if(lt===nt && (!na || !la || la===na || la.includes(na) || na.includes(la))){
+               local.cover=c.cover; local.coverUrl=c.cover; local.image=c.cover; local.imageUrl=c.cover;
+             }
+           }
+         }
+         localStorage.setItem("my-library-v1",JSON.stringify(Array.isArray(lx)?arr:lx));
+       }
+     }catch(e){console.warn("Raf son senkronizasyonu:",e)}
+     text.innerHTML += `<br><br>🔄 319 kapak raf verisine aktarılıyor…`;
+     setTimeout(()=>location.reload(),1200);
+   }
+ }
+ run();
+})();
+</script>
+
+<div id="storageCoverPanel" style="display:none!important">
+<b>☁️ Kapakları kalıcı depolama</b><div id="storageCoverText" style="margin-top:6px">Hazırlanıyor…</div>
+</div>
+<script>
+(async function(){
+ const text=document.getElementById("storageCoverText"), P="https://eylbiuworndkyfmltlic.supabase.co", FN="cover-url-to-storage-v2";
+ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+ function tok(){try{for(let i=0;i<localStorage.length;i++){let k=localStorage.key(i)||"";if(k.includes("auth-token")){let v=JSON.parse(localStorage.getItem(k)||"null");if(v?.access_token)return v.access_token}}}catch(e){}return null}
+ function getBooks(){try{let x=JSON.parse(localStorage.getItem("my-library-v1")||"null");return Array.isArray(x)?x:(x?.books||x?.library||x?.items||[])}catch(e){return[]}}
+ async function run(){
+  let t=tok(), bs=getBooks(); if(!t||!bs.length){text.textContent="Oturum veya kitaplık hazır değil.";return}
+  const items=[];
+  for(const b of bs){
+   const cover=b?.cover||b?.coverUrl||b?.image||b?.imageUrl;
+   if(!cover||String(cover).includes(".supabase.co/storage/v1/object/"))continue;
+   let id=b?.id; try{if(typeof window.cloudUUID==="function")id=window.cloudUUID(b.id,"book")}catch(e){}
+   if(id)items.push({bookId:String(id),title:String(b?.title||b?.name||""),author:String(b?.author||b?.authors||""),isbn:String(b?.isbn||b?.ISBN||""),coverUrl:String(cover)});
+  }
+  if(!items.length){text.innerHTML="<b>✅ Kapakların tamamı zaten kalıcı depolamada.</b>";return}
+  let stored=0,already=0,errors=0;
+  for(let i=0;i<items.length;i+=10){
+   const g=items.slice(i,i+10); text.textContent=`Kapaklar Storage'a aktarılıyor… ${Math.min(i+g.length,items.length)}/${items.length}`;
+   try{
+    const r=await fetch(`${P}/functions/v1/${FN}`,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t,"apikey":t},body:JSON.stringify({items:g})});
+    const d=await r.json(); if(!r.ok)throw new Error(d?.error||"HTTP "+r.status);
+    for(const x of d.results||[]){if(x.status==="stored")stored++;else if(x.status==="already")already++;else if(x.status==="error")errors++}
+   }catch(e){errors+=g.length;console.warn(e)}
+  }
+  text.innerHTML=`<b>✅ Kalıcı kapak aktarımı tamamlandı.</b><br>🟢 ${stored} Storage'a alındı<br>🔵 ${already} zaten vardı<br>🔴 ${errors} hata`;
+ }
+ let n=0;const tm=setInterval(()=>{if(window.currentSupabaseUser||n++>40){clearInterval(tm);run()}},500);
+})();
+</script>
+
+<div id="missingCoverPanel" style="display:none!important">
+<b>🔎 Eksik kapakları tamamla</b>
+<div id="missingCoverText" style="margin-top:6px">Kontrol ediliyor…</div>
+</div>
+<script>
+(async function(){
+ const box=document.getElementById("missingCoverText"); if(box) box.textContent="";
+ const SB="https://eylbiuworndkyfmltlic.supabase.co";
+ const FN="cover-url-to-storage-v2";
+ const wait=ms=>new Promise(r=>setTimeout(r,ms));
+ const token=()=>{
+   try{
+    for(let i=0;i<localStorage.length;i++){
+     const k=localStorage.key(i)||"";
+     if(k.includes("auth-token")){
+      const x=JSON.parse(localStorage.getItem(k)||"null");
+      if(x?.access_token)return x.access_token;
+     }
+    }
+   }catch(e){}
+   return null;
+ };
+ const clean=s=>String(s||"").normalize("NFKD")
+  .replace(/[\u0300-\u036f]/g,"").toLowerCase()
+  .replace(/ı/g,"i").replace(/ğ/g,"g").replace(/ü/g,"u")
+  .replace(/ş/g,"s").replace(/ö/g,"o").replace(/ç/g,"c")
+  .replace(/[^a-z0-9]+/g," ").trim();
+
+ async function google(title,author,isbn){
+  const queries=[];
+  const I=String(isbn||"").replace(/[^0-9Xx]/g,"");
+  if(I)queries.push("isbn:"+encodeURIComponent(I));
+  if(title)queries.push(encodeURIComponent(title+" "+(author||"")));
+  if(title)queries.push(encodeURIComponent(title));
+  for(const q of queries){
+   try{
+    const r=await fetch("https://www.googleapis.com/books/v1/volumes?q="+q+"&maxResults=40&printType=books");
+    if(!r.ok)continue;
+    const d=await r.json(), nt=clean(title),na=clean(author);
+    let best=null,score=-1;
+    for(const v of d.items||[]){
+     const i=v.volumeInfo||{};
+     const u=i.imageLinks?.large||i.imageLinks?.medium||i.imageLinks?.thumbnail||i.imageLinks?.smallThumbnail;
+     if(!u)continue;
+     const t=clean(i.title),a=clean((i.authors||[]).join(" "));
+     let s=0;
+     if(t===nt)s+=12;else if(t.includes(nt)||nt.includes(t))s+=7;
+     if(na&&a.includes(na))s+=8;
+     if(I&&i.industryIdentifiers?.some(x=>String(x.identifier).replace(/[^0-9Xx]/g,"")===I))s+=20;
+     if(s>score){score=s;best=u.replace(/^http:/,"https:");}
+    }
+    if(best&&score>=7)return best;
+   }catch(e){}
+  }
+  return null;
+ }
+
+ async function openLibrary(title,author,isbn){
+  const queries=[];
+  const I=String(isbn||"").replace(/[^0-9Xx]/g,"");
+  if(I)queries.push("isbn:"+encodeURIComponent(I));
+  queries.push(encodeURIComponent(title+" "+(author||"")));
+  queries.push(encodeURIComponent(title));
+  for(const q of queries){
+   try{
+    const r=await fetch("https://openlibrary.org/search.json?q="+q+"&limit=40");
+    if(!r.ok)continue;
+    const d=await r.json(),nt=clean(title),na=clean(author);
+    let best=null,score=-1;
+    for(const v of d.docs||[]){
+     if(!v.cover_i)continue;
+     const t=clean(v.title),a=clean((v.author_name||[]).join(" "));
+     let s=0;
+     if(t===nt)s+=12;else if(t.includes(nt)||nt.includes(t))s+=7;
+     if(na&&a.includes(na))s+=8;
+     if(I&&(v.isbn||[]).some(x=>String(x).replace(/[^0-9Xx]/g,"")===I))s+=20;
+     if(s>score){score=s;best="https://covers.openlibrary.org/b/id/"+v.cover_i+"-L.jpg";}
+    }
+    if(best&&score>=7)return best;
+   }catch(e){}
+  }
+  return null;
+ }
+
+ async function run(){
+  const t=token();
+  if(!t){box.textContent="Supabase oturumu bulunamadı.";return;}
+  const H={"Authorization":"Bearer "+t,"apikey":t};
+  const r=await fetch(SB+"/functions/v1/book-cover-missing-v3",{headers:H});
+  const payload=await r.json().catch(()=>({}));
+  if(!r.ok){box.textContent="Eksik kitaplar alınamadı: "+(payload?.error||("HTTP "+r.status));return;}
+  const rows=payload.books||[];
+  if(!rows.length){box.innerHTML="<b>✅ Eksik kapak kalmadı.</b>";return;}
+
+  let found=0,missing=0,errors=0;
+  for(let i=0;i<rows.length;i+=5){
+   const batch=rows.slice(i,i+5);
+   box.textContent=`Eksik kapaklar aranıyor… ${Math.min(i+batch.length,rows.length)}/${rows.length} · Bulunan ${found}`;
+   await Promise.all(batch.map(async b=>{
+    try{
+     let url=await google(b.title,b.author,b.isbn);
+     if(!url)url=await openLibrary(b.title,b.author,b.isbn);
+     if(!url){missing++;return;}
+
+     const rr=await fetch(SB+"/functions/v1/"+FN,{
+      method:"POST",
+      headers:{"Content-Type":"application/json",...H},
+      body:JSON.stringify({items:[{
+       bookId:String(b.id),
+       title:b.title||"",
+       author:b.author||"",
+       isbn:b.isbn||"",
+       coverUrl:url
+      }]})
+     });
+     const d=await rr.json();
+     const ok=d?.results?.some(x=>x.status==="stored"||x.status==="already");
+     if(!rr.ok||!ok){errors++;return;}
+     found++;
+    }catch(e){errors++;}
+   }));
+   await wait(250);
+  }
+  box.innerHTML=`<b>✅ Eksik kapak taraması tamamlandı.</b><br>
+  🟢 Storage'a alınan: <b>${found}</b><br>
+  ⚪ Bulunamayan: <b>${missing}</b><br>
+  🔴 Hata: <b>${errors}</b>`;
+ }
+ let tries=0;
+ const timer=setInterval(()=>{
+  if(token()||tries++>40){clearInterval(timer); if(token()) run().catch(()=>{});}
+ },1200);
+})();
+</script>
+
+<script>
+(async function(){
+  const SB="https://eylbiuworndkyfmltlic.supabase.co";
+  const FN="cover-url-to-storage-v2";
+  const wait=ms=>new Promise(r=>setTimeout(r,ms));
+  function token(){
+    try{
+      for(let i=0;i<localStorage.length;i++){
+        const k=localStorage.key(i)||"";
+        if(k.includes("auth-token")){
+          const x=JSON.parse(localStorage.getItem(k)||"null");
+          if(x?.access_token)return x.access_token;
+        }
+      }
+    }catch(e){}
+    return null;
+  }
+  function books(){
+    try{
+      const x=JSON.parse(localStorage.getItem("my-library-v1")||"null");
+      return Array.isArray(x)?x:(x?.books||x?.library||x?.items||[]);
+    }catch(e){return []}
+  }
+  async function run(){
+    const t=token(), bs=books();
+    if(!t||!bs.length)return;
+    const items=[];
+    for(const b of bs){
+      const cover=b?.cover||b?.coverUrl||b?.image||b?.imageUrl;
+      if(!cover || String(cover).includes(".supabase.co/storage/v1/object/"))continue;
+      let id=b?.id;
+      try{if(typeof window.cloudUUID==="function")id=window.cloudUUID(b.id,"book")}catch(e){}
+      if(id)items.push({
+        bookId:String(id),
+        title:String(b?.title||b?.name||""),
+        author:String(b?.author||b?.authors||""),
+        isbn:String(b?.isbn||b?.ISBN||""),
+        coverUrl:String(cover)
+      });
+    }
+    if(!items.length)return;
+    const H={"Content-Type":"application/json","Authorization":"Bearer "+t,"apikey":t};
+    for(let i=0;i<items.length;i+=10){
+      try{
+        await fetch(SB+"/functions/v1/"+FN,{
+          method:"POST",headers:H,
+          body:JSON.stringify({items:items.slice(i,i+10)})
+        });
+      }catch(e){}
+      await wait(250);
+    }
+  }
+  let n=0;
+  const timer=setInterval(()=>{
+    if(token()||n++>40){
+      clearInterval(timer);
+      if(token())run().catch(()=>{});
+    }
+  },1200);
+})();
 </script>
 </body>
 </html>
