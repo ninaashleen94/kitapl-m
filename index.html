@@ -2076,93 +2076,25 @@ document.addEventListener("DOMContentLoaded",()=>{const b=document.getElementByI
       }
       if(!rows.length)return;
 
-      // GitHub Pages has its own localStorage origin. Therefore the local
-      // 608-book cache must NEVER be treated as the complete library.
-      // Supabase is the cloud source of truth: merge all cloud books into
-      // the local cache, preserving any local-only books and local fields.
       const local=getBooksFromLocalStorage();
-      const keyOf=b=>{
-        const isbn=String(b?.isbn||b?.ISBN||"").replace(/[^0-9Xx]/g,"").toLowerCase();
-        if(isbn)return "isbn:"+isbn;
-        return "title:"+String(b?.title||b?.name||"").trim().toLocaleLowerCase("tr-TR")
-          +"||"+String(b?.author||b?.authors||"").trim().toLocaleLowerCase("tr-TR");
-      };
-      const byKey=new Map(local.map(b=>[keyOf(b),b]));
+      const byTitle=new Map(local.map(b=>[(String(b.title||"")+"||"+String(b.author||"")).toLocaleLowerCase("tr-TR"),b]));
       let changed=false;
-
       for(const r of rows){
-        const k=keyOf(r);
-        let b=byKey.get(k);
-
-        if(!b){
-          // Reconstruct a local book from the cloud record. Do not alter or
-          // delete anything already present locally.
-          b={
-            id:r.id,
-            title:r.title||"Kitap",
-            author:r.author||"",
-            isbn:r.isbn||"",
-            publisher:r.publisher||"",
-            year:r.year||"",
-            pages:r.pages??"",
-            genre:r.genre||"",
-            cover:r.cover||"",
-            shelf:r.shelf||"",
-            row:r.row_number??"",
-            pos:r.position??"",
-            status:r.status||"unread",
-            notes:r.notes||""
-          };
-          local.push(b);
-          byKey.set(k,b);
-          changed=true;
-        }else{
-          // Cloud covers are permanent; use them locally. For the rest,
-          // prefer existing local data so an older GitHub cache is not
-          // unexpectedly overwritten.
-          if(r.cover && b.cover!==r.cover){b.cover=r.cover;changed=true;}
-          if(!b.id && r.id){b.id=r.id;changed=true;}
+        const b=byTitle.get((String(r.title||"")+"||"+String(r.author||"")).toLocaleLowerCase("tr-TR"));
+        if(b && r.cover && b.cover!==r.cover){
+          b.cover=r.cover; changed=true;
         }
       }
-
       if(changed){
         const raw=localStorage.getItem("my-library-v1");
-        let state; try{state=raw?JSON.parse(raw):{books:local}}catch(e){state={books:local}}
-        if(Array.isArray(state)) localStorage.setItem("my-library-v1",JSON.stringify(local));
-        else if(state&&Array.isArray(state.books)){
-          state.books=local;
-          localStorage.setItem("my-library-v1",JSON.stringify(state));
-        }
-        if(window.data){
-          window.data.books=local;
-          if(typeof renderAll==="function")renderAll();
-        }
+        let state; try{state=raw?JSON.parse(raw):local}catch(e){state=local}
+        if(Array.isArray(state))localStorage.setItem("my-library-v1",JSON.stringify(local));
+        else if(state&&Array.isArray(state.books)){state.books=local;localStorage.setItem("my-library-v1",JSON.stringify(state));}
       }
-      console.log("☁️ Bulut kitaplık eşitlendi:",rows.length,"Supabase /",local.length,"yerel");
     }catch(e){console.warn("Bulut başlangıç senkronu:",e)}
   }
 
-  function startCloudBoot(){
-    let tries=0;
-    const timer=setInterval(async()=>{
-      if(window.currentSupabaseUser){
-        clearInterval(timer);
-        await cloudBoot().catch(e=>console.warn("Bulut eşitleme:",e));
-      }else if(++tries>120){
-        clearInterval(timer);
-      }
-    },500);
-  }
-  document.addEventListener("DOMContentLoaded",startCloudBoot);
-  setTimeout(()=>{
-    try{
-      if(window.supabaseClient?.auth){
-        window.supabaseClient.auth.onAuthStateChange((_event,session)=>{
-          if(session?.user) cloudBoot().catch(e=>console.warn("Bulut eşitleme:",e));
-        });
-      }
-    }catch(e){}
-  },1500);
+  document.addEventListener("DOMContentLoaded",()=>setTimeout(cloudBoot,900));
 })();
 </script>
 
@@ -2546,123 +2478,6 @@ document.addEventListener("DOMContentLoaded",()=>{const b=document.getElementByI
       if(token())run().catch(()=>{});
     }
   },1200);
-})();
-</script>
-
-<script>
-(function(){
-  const SB="https://eylbiuworndkyfmltlic.supabase.co";
-  function token(){
-    try{
-      for(let i=0;i<localStorage.length;i++){
-        const k=localStorage.key(i)||"";
-        if(k.includes("auth-token")){
-          const x=JSON.parse(localStorage.getItem(k)||"null");
-          if(x?.access_token)return x.access_token;
-        }
-      }
-    }catch(e){}
-    return null;
-  }
-  function localBooks(){
-    try{
-      const x=JSON.parse(localStorage.getItem("my-library-v1")||"null");
-      return Array.isArray(x)?x:(x?.books||x?.library||x?.items||[]);
-    }catch(e){return []}
-  }
-  function key(b){
-    const isbn=String(b?.isbn||b?.ISBN||"").replace(/[^0-9Xx]/g,"").toLowerCase();
-    if(isbn)return "isbn:"+isbn;
-    return "t:"+String(b?.title||b?.name||"").trim().toLocaleLowerCase("tr-TR")
-      +"|a:"+String(b?.author||b?.authors||"").trim().toLocaleLowerCase("tr-TR");
-  }
-  async function hydrate(){
-    const t=token(); if(!t)return;
-    const H={"Authorization":"Bearer "+t,"apikey":t};
-    let rows=[];
-    try{
-      for(let from=0;;from+=1000){
-        const r=await fetch(SB+"/rest/v1/library_books?select=id,title,author,isbn,cover&limit=1000&offset="+from,{headers:H});
-        if(!r.ok) return;
-        const d=await r.json(); rows=rows.concat(d||[]);
-        if(!d||d.length<1000)break;
-      }
-    }catch(e){return}
-    if(!rows.length)return;
-    const books=localBooks(), map=new Map(books.map(b=>[key(b),b]));
-    let changed=false;
-    for(const r of rows){
-      if(!r.cover || !String(r.cover).includes("/storage/v1/object/"))continue;
-      const b=map.get(key(r));
-      if(b && b.cover!==r.cover){b.cover=r.cover;changed=true;}
-    }
-    if(changed){
-      const raw=localStorage.getItem("my-library-v1");
-      try{
-        const state=JSON.parse(raw||"null");
-        if(Array.isArray(state))localStorage.setItem("my-library-v1",JSON.stringify(books));
-        else if(state&&Array.isArray(state.books)){
-          state.books=books;localStorage.setItem("my-library-v1",JSON.stringify(state));
-        }
-      }catch(e){}
-      try{
-        if(typeof window.renderAll==="function")window.renderAll();
-        if(typeof window.renderBooks==="function")window.renderBooks();
-      }catch(e){}
-    }
-  }
-  let n=0;
-  const timer=setInterval(()=>{
-    if(token()||n++>120){
-      clearInterval(timer);
-      if(token())hydrate().catch(()=>{});
-    }
-  },500);
-})();
-</script>
-
-<script>
-(function(){
-  function norm(s){
-    return String(s||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"")
-      .toLocaleLowerCase("tr-TR").replace(/ı/g,"i").replace(/ğ/g,"g")
-      .replace(/ü/g,"u").replace(/ş/g,"s").replace(/ö/g,"o").replace(/ç/g,"c")
-      .replace(/\s+/g," ").trim();
-  }
-  function isbn(v){return String(v||"").replace(/[^0-9Xx]/g,"").toUpperCase();}
-  function key(b){
-    const i=isbn(b?.isbn||b?.ISBN);
-    if(i) return "I:"+i;
-    const t=norm(b?.title||b?.name), a=norm(b?.author||b?.authors);
-    return (t||a) ? "T:"+t+"|A:"+a : "ID:"+String(b?.id||"");
-  }
-  function merge(){
-    try{
-      if(!Array.isArray(data?.books)) return;
-      const seen=new Map(), out=[];
-      for(const b of data.books){
-        const k=key(b), prev=seen.get(k);
-        if(!prev){seen.set(k,b);out.push(b);continue;}
-        // Keep the first record but merge useful fields and the permanent cover.
-        for(const [f,v] of Object.entries(b||{})){
-          if((prev[f]==null||prev[f]==="") && v!=null && v!=="") prev[f]=v;
-        }
-        if(String(b?.cover||"").includes("/storage/v1/object/")) prev.cover=b.cover;
-        // Prefer a real UUID over a missing/temporary id.
-        if(b?.id && !prev?.id) prev.id=b.id;
-      }
-      if(out.length!==data.books.length){
-        data.books=out;
-        localStorage.setItem(KEY,JSON.stringify(data));
-        renderAll();
-        console.log("🧹 Tekrar kitap temizlendi:", data.books.length);
-      }
-    }catch(e){console.warn("Tekrar temizleme:",e)}
-  }
-  // Run after auth/cloud hydration, then once more to catch late sync.
-  setTimeout(merge,4000);
-  setTimeout(merge,9000);
-  window.dedupeBooksNow=merge;
 })();
 </script>
 </body>
