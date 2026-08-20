@@ -2623,44 +2623,46 @@ document.addEventListener("DOMContentLoaded",()=>{const b=document.getElementByI
 
 <script>
 (function(){
-  function norm(s){return String(s||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/ı/g,"i").replace(/ğ/g,"g").replace(/ü/g,"u").replace(/ş/g,"s").replace(/ö/g,"o").replace(/ç/g,"c").replace(/\s+/g," ").trim();}
+  function norm(s){
+    return String(s||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"")
+      .toLocaleLowerCase("tr-TR").replace(/ı/g,"i").replace(/ğ/g,"g")
+      .replace(/ü/g,"u").replace(/ş/g,"s").replace(/ö/g,"o").replace(/ç/g,"c")
+      .replace(/\s+/g," ").trim();
+  }
+  function isbn(v){return String(v||"").replace(/[^0-9Xx]/g,"").toUpperCase();}
   function key(b){
-    const isbn=String(b?.isbn||b?.ISBN||"").replace(/[^0-9Xx]/g,"");
-    if(isbn)return "isbn:"+isbn;
-    return "t:"+norm(b?.title||b?.name)+"|a:"+norm(b?.author||b?.authors);
+    const i=isbn(b?.isbn||b?.ISBN);
+    if(i) return "I:"+i;
+    const t=norm(b?.title||b?.name), a=norm(b?.author||b?.authors);
+    return (t||a) ? "T:"+t+"|A:"+a : "ID:"+String(b?.id||"");
   }
-  function run(){
+  function merge(){
     try{
-      const raw=localStorage.getItem("my-library-v1"); if(!raw)return;
-      let state=JSON.parse(raw), arr=Array.isArray(state)?state:(state?.books||[]);
-      if(!Array.isArray(arr))return;
-      const map=new Map(), out=[];
-      for(const b of arr){
-        const k=key(b);
-        if(!k || k==="t:|a:"){out.push(b);continue;}
-        const old=map.get(k);
-        if(!old){map.set(k,b);out.push(b);continue;}
-        // Merge duplicate copies into the first record; preserve the richer cover/data.
-        const merged={...old};
-        for(const [field,val] of Object.entries(b||{})){
-          if((merged[field]==null||merged[field]==="") && val!=null&&val!=="") merged[field]=val;
+      if(!Array.isArray(data?.books)) return;
+      const seen=new Map(), out=[];
+      for(const b of data.books){
+        const k=key(b), prev=seen.get(k);
+        if(!prev){seen.set(k,b);out.push(b);continue;}
+        // Keep the first record but merge useful fields and the permanent cover.
+        for(const [f,v] of Object.entries(b||{})){
+          if((prev[f]==null||prev[f]==="") && v!=null && v!=="") prev[f]=v;
         }
-        if(b.cover && String(b.cover).includes("/storage/v1/object/")) merged.cover=b.cover;
-        const idx=out.indexOf(old); if(idx>=0) out[idx]=merged;
-        map.set(k,merged);
+        if(String(b?.cover||"").includes("/storage/v1/object/")) prev.cover=b.cover;
+        // Prefer a real UUID over a missing/temporary id.
+        if(b?.id && !prev?.id) prev.id=b.id;
       }
-      if(out.length!==arr.length){
-        if(Array.isArray(state)) localStorage.setItem("my-library-v1",JSON.stringify(out));
-        else {state.books=out; localStorage.setItem("my-library-v1",JSON.stringify(state));}
-        try{
-          if(window.data?.books) window.data.books=out;
-          if(typeof window.renderAll==="function")window.renderAll();
-          else if(typeof window.renderBooks==="function")window.renderBooks();
-        }catch(e){}
+      if(out.length!==data.books.length){
+        data.books=out;
+        localStorage.setItem(KEY,JSON.stringify(data));
+        renderAll();
+        console.log("🧹 Tekrar kitap temizlendi:", data.books.length);
       }
-    }catch(e){console.warn("Kitap tekrar temizleme:",e)}
+    }catch(e){console.warn("Tekrar temizleme:",e)}
   }
-  setTimeout(run,1800);
+  // Run after auth/cloud hydration, then once more to catch late sync.
+  setTimeout(merge,4000);
+  setTimeout(merge,9000);
+  window.dedupeBooksNow=merge;
 })();
 </script>
 </body>
